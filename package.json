@@ -4,9 +4,11 @@
   "description": "Minimal Electron note pad with a single text area.",
   "main": "main.js",
   "scripts": {
-    "start": "electron ."
+    "start": "electron .",
+    "package:mac": "electron-packager . Pad --platform=darwin --arch=universal --out=dist --overwrite"
   },
   "devDependencies": {
+    "@electron/packager": "^19.0.1",
     "electron": "^31.0.0"
   }
 }

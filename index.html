@@ -14,6 +14,7 @@
         margin: 0;
         height: 100vh;
         display: flex;
+        flex-direction: column;
       }
 
       textarea {
@@ -26,9 +27,91 @@
         outline: none;
         background: transparent;
       }
+
+      .tab-bar {
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+        padding: 0.5rem;
+        border-bottom: 1px solid rgba(0, 0, 0, 0.1);
+        border-bottom: 1px solid color-mix(in srgb, currentColor 15%, transparent);
+        background: rgba(0, 0, 0, 0.03);
+        background: color-mix(in srgb, currentColor 8%, transparent);
+      }
+
+      .tabs {
+        display: flex;
+        gap: 0.25rem;
+        overflow-x: auto;
+        flex: 1;
+      }
+
+      .tab {
+        display: inline-flex;
+        align-items: center;
+        border: 1px solid rgba(0, 0, 0, 0.1);
+        border: 1px solid color-mix(in srgb, currentColor 25%, transparent);
+        background: rgba(0, 0, 0, 0.02);
+        background: color-mix(in srgb, currentColor 5%, transparent);
+        color: inherit;
+        border-radius: 0.5rem;
+        transition: background 0.15s ease;
+      }
+
+      .tab:hover {
+        background: rgba(0, 0, 0, 0.06);
+        background: color-mix(in srgb, currentColor 12%, transparent);
+      }
+
+      .tab.active {
+        background: rgba(0, 0, 0, 0.12);
+        background: color-mix(in srgb, currentColor 20%, transparent);
+        border-color: rgba(0, 0, 0, 0.2);
+        border-color: color-mix(in srgb, currentColor 45%, transparent);
+      }
+
+      .tab-button,
+      .tab-close {
+        border: none;
+        background: transparent;
+        color: inherit;
+        font: inherit;
+        cursor: pointer;
+        padding: 0.35rem 0.5rem;
+      }
+
+      .tab-button {
+        padding-right: 0.25rem;
+      }
+
+      .tab-close {
+        padding-left: 0.25rem;
+        line-height: 1;
+        opacity: 0.7;
+      }
+
+      .tab-close:hover {
+        opacity: 1;
+      }
+
+      .add-tab {
+        flex: none;
+        width: 2rem;
+        height: 2rem;
+        display: grid;
+        place-items: center;
+        font-size: 1.25rem;
+        line-height: 1;
+      }
     </style>
   </head>
   <body>
+    <div class="tab-bar">
+      <div id="tabs" class="tabs"></div>
+      <button id="add-tab" class="tab-button add-tab" type="button" aria-label="New tab" title="New tab">
+        +
+      </button>
+    </div>
     <textarea id="note" autofocus placeholder="Start typing..." spellcheck="false"></textarea>
     <script src="./renderer.js"></script>
   </body>
