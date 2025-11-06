@@ -1,0 +1,12 @@
+{
+  "name": "pad",
+  "version": "1.0.0",
+  "description": "Minimal Electron note pad with a single text area.",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron ."
+  },
+  "devDependencies": {
+    "electron": "^31.0.0"
+  }
+}

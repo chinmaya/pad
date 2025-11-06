@@ -1,0 +1,35 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Pad</title>
+    <style>
+      :root {
+        color-scheme: light dark;
+        font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      }
+
+      body {
+        margin: 0;
+        height: 100vh;
+        display: flex;
+      }
+
+      textarea {
+        flex: 1;
+        padding: 1rem;
+        border: none;
+        resize: none;
+        font-size: 1rem;
+        line-height: 1.5;
+        outline: none;
+        background: transparent;
+      }
+    </style>
+  </head>
+  <body>
+    <textarea id="note" autofocus placeholder="Start typing..." spellcheck="false"></textarea>
+    <script src="./renderer.js"></script>
+  </body>
+</html>
