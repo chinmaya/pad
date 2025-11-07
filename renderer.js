@@ -4,9 +4,11 @@ const addTabButton = document.getElementById('add-tab');
 
 const STORAGE_KEY = 'pad.tabs';
 const LEGACY_STORAGE_KEY = 'pad.note';
+const TITLE_MAX_LENGTH = 20;
 
 const state = loadState();
 const isMac = navigator.platform.toUpperCase().includes('MAC');
+let draggingTabId = null;
 
 renderTabs();
 syncNoteWithActiveTab();
@@ -18,7 +20,11 @@ note.addEventListener('input', event => {
   }
 
   active.content = event.target.value;
+  const titleChanged = updateTabTitleFromContent(active);
   persistState();
+  if (titleChanged) {
+    renderTabs();
+  }
 });
 
 document.addEventListener('keydown', event => {
@@ -45,6 +51,31 @@ addTabButton.addEventListener('click', () => {
   note.focus();
 });
 
+tabsContainer.addEventListener('dragover', event => {
+  if (!draggingTabId) {
+    return;
+  }
+
+  event.preventDefault();
+});
+
+tabsContainer.addEventListener('drop', event => {
+  if (!draggingTabId) {
+    return;
+  }
+
+  event.preventDefault();
+  const targetElement = event.target.closest('.tab');
+  const clientX = event.clientX;
+  const moved = reorderTabsFromDrop(draggingTabId, targetElement, clientX);
+  draggingTabId = null;
+
+  if (moved) {
+    persistState();
+    renderTabs();
+  }
+});
+
 function loadState() {
   const saved = localStorage.getItem(STORAGE_KEY);
   if (saved) {
@@ -53,14 +84,26 @@ function loadState() {
       if (parsed && Array.isArray(parsed.tabs) && parsed.tabs.length) {
         const sanitizedTabs = parsed.tabs
           .filter(tab => tab && typeof tab === 'object')
-          .map((tab, index) => ({
-            id: typeof tab.id === 'string' && tab.id ? tab.id : generateId(),
-            title:
-              typeof tab.title === 'string' && tab.title.trim()
-                ? tab.title
-                : `Tab ${index + 1}`,
-            content: typeof tab.content === 'string' ? tab.content : '',
-          }));
+          .map((tab, index) => {
+            const fallbackTitle =
+              typeof tab.fallbackTitle === 'string' && tab.fallbackTitle.trim()
+                ? tab.fallbackTitle
+                : `Tab ${index + 1}`;
+
+            const sanitizedTab = {
+              id: typeof tab.id === 'string' && tab.id ? tab.id : generateId(),
+              fallbackTitle,
+              title:
+                typeof tab.title === 'string' && tab.title.trim() ? tab.title : fallbackTitle,
+              content: typeof tab.content === 'string' ? tab.content : '',
+            };
+
+            if (sanitizedTab.content.trim()) {
+              updateTabTitleFromContent(sanitizedTab);
+            }
+
+            return sanitizedTab;
+          });
 
         if (sanitizedTabs.length) {
           const hasValidActive =
@@ -82,6 +125,7 @@ function loadState() {
   if (legacy !== null) {
     const firstTab = {
       id: generateId(),
+      fallbackTitle: 'Tab 1',
       title: 'Tab 1',
       content: legacy,
     };
@@ -118,6 +162,16 @@ function renderTabs() {
   state.tabs.forEach(tab => {
     const wrapper = document.createElement('div');
     wrapper.className = `tab${tab.id === state.activeTabId ? ' active' : ''}`;
+    wrapper.dataset.tabId = tab.id;
+    wrapper.draggable = true;
+    wrapper.addEventListener('dragstart', () => {
+      draggingTabId = tab.id;
+      wrapper.classList.add('dragging');
+    });
+    wrapper.addEventListener('dragend', () => {
+      wrapper.classList.remove('dragging');
+      draggingTabId = null;
+    });
 
     const button = document.createElement('button');
     button.type = 'button';
@@ -194,9 +248,11 @@ function closeTab(tabId) {
 }
 
 function createEmptyTab(position) {
+  const fallbackTitle = `Tab ${position}`;
   return {
     id: generateId(),
-    title: `Tab ${position}`,
+    title: fallbackTitle,
+    fallbackTitle,
     content: '',
   };
 }
@@ -221,7 +277,11 @@ function sanitizeNextTabNumber(candidate, tabs) {
 
 function getHighestTabNumber(tabs) {
   return tabs.reduce((highest, tab) => {
-    const match = /^Tab (\d+)$/.exec(tab.title.trim());
+    const sourceTitle =
+      (typeof tab.fallbackTitle === 'string' && tab.fallbackTitle.trim()) ||
+      (typeof tab.title === 'string' && tab.title.trim()) ||
+      '';
+    const match = /^Tab (\d+)$/.exec(sourceTitle);
     if (!match) {
       return highest;
     }
@@ -237,4 +297,83 @@ function getHighestTabNumber(tabs) {
 
 function generateId() {
   return `tab-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+}
+
+function updateTabTitleFromContent(tab) {
+  const derivedTitle = deriveTitleFromContent(tab.content);
+  const fallbackTitle = tab.fallbackTitle || tab.title;
+  const nextTitle = derivedTitle || fallbackTitle;
+
+  if (tab.title === nextTitle) {
+    return false;
+  }
+
+  tab.title = nextTitle;
+  return true;
+}
+
+function deriveTitleFromContent(content) {
+  const normalized = content.trim().replace(/\s+/g, ' ');
+  if (!normalized) {
+    return '';
+  }
+
+  const words = normalized.split(' ');
+  let result = '';
+
+  for (const word of words) {
+    const candidate = result ? `${result} ${word}` : word;
+    if (candidate.length > TITLE_MAX_LENGTH) {
+      if (!result) {
+        return word.slice(0, TITLE_MAX_LENGTH);
+      }
+      break;
+    }
+
+    result = candidate;
+    if (result.length === TITLE_MAX_LENGTH) {
+      break;
+    }
+  }
+
+  return result;
+}
+
+function reorderTabsFromDrop(tabId, targetElement, clientX) {
+  const targetId = targetElement?.dataset.tabId ?? null;
+  let targetIndex = state.tabs.length;
+
+  if (targetId) {
+    const baseIndex = state.tabs.findIndex(tab => tab.id === targetId);
+    if (baseIndex === -1) {
+      return false;
+    }
+
+    const rect = targetElement.getBoundingClientRect();
+    const dropBefore = clientX < rect.left + rect.width / 2;
+    targetIndex = dropBefore ? baseIndex : baseIndex + 1;
+  }
+
+  return moveTabToIndex(tabId, targetIndex);
+}
+
+function moveTabToIndex(tabId, rawTargetIndex) {
+  const fromIndex = state.tabs.findIndex(tab => tab.id === tabId);
+  if (fromIndex === -1) {
+    return false;
+  }
+
+  let targetIndex = Math.max(0, Math.min(rawTargetIndex, state.tabs.length));
+
+  if (targetIndex === fromIndex || targetIndex === fromIndex + 1) {
+    return false;
+  }
+
+  const [tab] = state.tabs.splice(fromIndex, 1);
+  if (targetIndex > fromIndex) {
+    targetIndex -= 1;
+  }
+
+  state.tabs.splice(targetIndex, 0, tab);
+  return true;
 }

@@ -56,6 +56,8 @@
         color: inherit;
         border-radius: 0.5rem;
         transition: background 0.15s ease;
+        user-select: none;
+        cursor: grab;
       }
 
       .tab:hover {
@@ -68,6 +70,10 @@
         background: color-mix(in srgb, currentColor 20%, transparent);
         border-color: rgba(0, 0, 0, 0.2);
         border-color: color-mix(in srgb, currentColor 45%, transparent);
+      }
+
+      .tab.dragging {
+        opacity: 0.6;
       }
 
       .tab-button,
