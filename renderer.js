@@ -10,6 +10,10 @@ const state = loadState();
 const isMac = navigator.platform.toUpperCase().includes('MAC');
 let draggingTabId = null;
 
+if (window.padAPI?.onFileOpened) {
+  window.padAPI.onFileOpened(handleExternalFileOpen);
+}
+
 renderTabs();
 syncNoteWithActiveTab();
 
@@ -206,6 +210,25 @@ function renderTabs() {
   });
 }
 
+function handleExternalFileOpen(payload) {
+  if (!payload || typeof payload.content !== 'string') {
+    return;
+  }
+
+  const active = ensureActiveTabExists();
+  active.content = payload.content;
+
+  const renamed = applyTitleFromFileName(active, payload.fileName);
+  if (!renamed) {
+    updateTabTitleFromContent(active);
+  }
+
+  persistState();
+  renderTabs();
+  syncNoteWithActiveTab();
+  note.focus();
+}
+
 function syncNoteWithActiveTab() {
   const active = getActiveTab();
   note.value = active ? active.content : '';
@@ -213,6 +236,18 @@ function syncNoteWithActiveTab() {
 
 function getActiveTab() {
   return state.tabs.find(tab => tab.id === state.activeTabId) ?? null;
+}
+
+function ensureActiveTabExists() {
+  const current = getActiveTab();
+  if (current) {
+    return current;
+  }
+
+  const newTab = createEmptyTab(getNextTabNumber());
+  state.tabs.push(newTab);
+  state.activeTabId = newTab.id;
+  return newTab;
 }
 
 function closeTab(tabId) {
@@ -337,6 +372,22 @@ function deriveTitleFromContent(content) {
   }
 
   return result;
+}
+
+function applyTitleFromFileName(tab, rawFileName) {
+  if (!rawFileName || typeof rawFileName !== 'string') {
+    return false;
+  }
+
+  const cleaned = rawFileName.trim();
+  if (!cleaned) {
+    return false;
+  }
+
+  const truncated = cleaned.length > TITLE_MAX_LENGTH ? cleaned.slice(0, TITLE_MAX_LENGTH) : cleaned;
+  tab.title = truncated;
+  tab.fallbackTitle = truncated;
+  return true;
 }
 
 function reorderTabsFromDrop(tabId, targetElement, clientX) {
