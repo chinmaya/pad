@@ -49,6 +49,7 @@
       .tab {
         display: inline-flex;
         align-items: center;
+        box-sizing: border-box;
         border: 1px solid rgba(0, 0, 0, 0.1);
         border: 1px solid color-mix(in srgb, currentColor 25%, transparent);
         background: rgba(0, 0, 0, 0.02);
@@ -58,6 +59,8 @@
         transition: background 0.15s ease;
         user-select: none;
         cursor: grab;
+        min-width: 0;
+        height: 2.25rem;
       }
 
       .tab:hover {
@@ -87,13 +90,24 @@
       }
 
       .tab-button {
+        display: inline-flex;
+        align-items: center;
         padding-right: 0.25rem;
+        flex: 1 1 auto;
+        min-width: 0;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        height: 100%;
       }
 
       .tab-close {
+        display: inline-flex;
+        align-items: center;
         padding-left: 0.25rem;
         line-height: 1;
         opacity: 0.7;
+        flex: none;
       }
 
       .tab-close:hover {
