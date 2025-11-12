@@ -348,7 +348,8 @@ function updateTabTitleFromContent(tab) {
 }
 
 function deriveTitleFromContent(content) {
-  const normalized = content.trim().replace(/\s+/g, ' ');
+  const firstLine = content.split(/\r?\n/, 1)[0] ?? '';
+  const normalized = firstLine.trim().replace(/\s+/g, ' ');
   if (!normalized) {
     return '';
   }
