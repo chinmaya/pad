@@ -33,7 +33,7 @@
 
       .tab-bar {
         display: flex;
-        align-items: center;
+        align-items: flex-start;
         gap: 0.5rem;
         padding: 0.5rem;
         border-bottom: 1px solid rgba(0, 0, 0, 0.1);
@@ -44,9 +44,20 @@
 
       .tabs {
         display: flex;
+        flex-wrap: nowrap;
         gap: 0.25rem;
         overflow-x: auto;
+        overflow-y: hidden;
+        max-height: var(--tab-height);
         flex: 1;
+      }
+
+      .tabs.expanded {
+        flex-wrap: wrap;
+        align-content: flex-start;
+        overflow-x: hidden;
+        overflow-y: auto;
+        max-height: calc(var(--tab-height) * 3 + 0.5rem);
       }
 
       .tab {
@@ -118,7 +129,8 @@
         opacity: 1;
       }
 
-      .add-tab {
+      .add-tab,
+      .tab-toggle {
         flex: none;
         width: calc(var(--tab-height) + 0.25rem);
         height: var(--tab-height);
@@ -127,11 +139,25 @@
         font-size: 1.25rem;
         line-height: 1;
       }
+
+      .tab-toggle {
+        font-size: 1rem;
+      }
     </style>
   </head>
   <body>
     <div class="tab-bar">
       <div id="tabs" class="tabs"></div>
+      <button
+        id="toggle-tabs"
+        class="tab-button tab-toggle"
+        type="button"
+        aria-label="Show more tabs"
+        title="Show more tabs"
+        aria-pressed="false"
+      >
+        v
+      </button>
       <button id="add-tab" class="tab-button add-tab" type="button" aria-label="New tab" title="New tab">
         +
       </button>

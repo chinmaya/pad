@@ -1,20 +1,24 @@
 const note = document.getElementById('note');
 const tabsContainer = document.getElementById('tabs');
 const addTabButton = document.getElementById('add-tab');
+const toggleTabsButton = document.getElementById('toggle-tabs');
 
 const STORAGE_KEY = 'pad.tabs';
 const LEGACY_STORAGE_KEY = 'pad.note';
 const TITLE_MAX_LENGTH = 20;
+const TAB_LAYOUT_STORAGE_KEY = 'pad.tabsLayoutExpanded';
 
 const state = loadState();
 const isMac = navigator.platform.toUpperCase().includes('MAC');
 let draggingTabId = null;
+let tabsExpanded = loadTabsExpandedPreference();
 
 if (window.padAPI?.onFileOpened) {
   window.padAPI.onFileOpened(handleExternalFileOpen);
 }
 
 renderTabs();
+applyTabsLayoutPreference();
 syncNoteWithActiveTab();
 
 note.addEventListener('input', event => {
@@ -51,8 +55,15 @@ addTabButton.addEventListener('click', () => {
   state.activeTabId = newTab.id;
   persistState();
   renderTabs();
+  applyTabsLayoutPreference();
   syncNoteWithActiveTab();
   note.focus();
+});
+
+toggleTabsButton.addEventListener('click', () => {
+  tabsExpanded = !tabsExpanded;
+  applyTabsLayoutPreference();
+  persistTabsExpandedPreference();
 });
 
 tabsContainer.addEventListener('dragover', event => {
@@ -149,6 +160,10 @@ function loadState() {
   };
 }
 
+function loadTabsExpandedPreference() {
+  return localStorage.getItem(TAB_LAYOUT_STORAGE_KEY) === 'true';
+}
+
 function persistState() {
   localStorage.setItem(
     STORAGE_KEY,
@@ -158,6 +173,10 @@ function persistState() {
       nextTabNumber: state.nextTabNumber,
     }),
   );
+}
+
+function persistTabsExpandedPreference() {
+  localStorage.setItem(TAB_LAYOUT_STORAGE_KEY, tabsExpanded ? 'true' : 'false');
 }
 
 function renderTabs() {
@@ -208,6 +227,15 @@ function renderTabs() {
     wrapper.appendChild(closeButton);
     tabsContainer.appendChild(wrapper);
   });
+}
+
+function applyTabsLayoutPreference() {
+  const label = tabsExpanded ? 'Show fewer tabs' : 'Show more tabs';
+  tabsContainer.classList.toggle('expanded', tabsExpanded);
+  toggleTabsButton.setAttribute('aria-pressed', tabsExpanded ? 'true' : 'false');
+  toggleTabsButton.setAttribute('aria-label', label);
+  toggleTabsButton.setAttribute('title', label);
+  toggleTabsButton.textContent = tabsExpanded ? '^' : 'v';
 }
 
 function handleExternalFileOpen(payload) {
