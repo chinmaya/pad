@@ -244,6 +244,16 @@ function handleExternalFileOpen(payload) {
   }
 
   const active = ensureActiveTabExists();
+  const hasContent = active.content.trim().length > 0;
+  if (hasContent) {
+    const confirmed = window.confirm(
+      'Opening this file will replace the current tab content. Continue?'
+    );
+    if (!confirmed) {
+      return;
+    }
+  }
+
   active.content = payload.content;
 
   const renamed = applyTitleFromFileName(active, payload.fileName);
