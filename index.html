@@ -18,6 +18,8 @@
         height: 100vh;
         display: flex;
         flex-direction: column;
+        background: #f8f9fb;
+        color: #0f172a;
       }
 
       textarea {
@@ -40,6 +42,9 @@
         border-bottom: 1px solid color-mix(in srgb, currentColor 15%, transparent);
         background: rgba(0, 0, 0, 0.03);
         background: color-mix(in srgb, currentColor 8%, transparent);
+        position: sticky;
+        top: 0;
+        z-index: 2;
       }
 
       .tabs {
@@ -143,11 +148,163 @@
       .tab-toggle {
         font-size: 1rem;
       }
+
+      .modal {
+        position: fixed;
+        inset: 0;
+        background: rgba(15, 23, 42, 0.45);
+        display: grid;
+        place-items: center;
+        padding: 1.5rem;
+        z-index: 5;
+      }
+
+      .modal.hidden {
+        display: none;
+      }
+
+      .modal-content {
+        background: #ffffff;
+        color: #0f172a;
+        width: min(720px, 100%);
+        max-height: 90vh;
+        border-radius: 0.75rem;
+        box-shadow: 0 20px 45px rgba(15, 23, 42, 0.25);
+        display: flex;
+        flex-direction: column;
+        overflow: hidden;
+        border: 1px solid rgba(0, 0, 0, 0.06);
+      }
+
+      .modal-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 1rem 1.25rem;
+        gap: 1rem;
+        border-bottom: 1px solid rgba(0, 0, 0, 0.06);
+      }
+
+      .modal-title {
+        font-size: 1.05rem;
+        font-weight: 650;
+      }
+
+      .modal-subtitle {
+        font-size: 0.9rem;
+        color: #475569;
+      }
+
+      .icon-button {
+        border: none;
+        background: rgba(0, 0, 0, 0.05);
+        color: inherit;
+        width: 2rem;
+        height: 2rem;
+        border-radius: 0.5rem;
+        font-size: 1.1rem;
+        cursor: pointer;
+      }
+
+      .icon-button:hover {
+        background: rgba(0, 0, 0, 0.1);
+      }
+
+      .settings-editor {
+        width: 100%;
+        min-height: 320px;
+        resize: vertical;
+        border: none;
+        border-bottom: 1px solid rgba(0, 0, 0, 0.06);
+        padding: 1rem 1.25rem;
+        font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New",
+          monospace;
+        font-size: 0.95rem;
+        outline: none;
+        box-sizing: border-box;
+      }
+
+      .settings-error {
+        padding: 0.5rem 1.25rem;
+        color: #b91c1c;
+        min-height: 1.5rem;
+        font-size: 0.9rem;
+      }
+
+      .settings-suggestions {
+        padding: 0.5rem 1.25rem;
+        display: flex;
+        gap: 0.5rem;
+        flex-wrap: wrap;
+      }
+
+      .settings-suggestions.hidden {
+        display: none;
+      }
+
+      .settings-suggestions button {
+        border: 1px solid rgba(0, 0, 0, 0.12);
+        background: #e2e8f0;
+        color: #0f172a;
+        padding: 0.35rem 0.6rem;
+        border-radius: 0.45rem;
+        cursor: pointer;
+        font-size: 0.9rem;
+      }
+
+      .settings-suggestions button:hover {
+        background: #cbd5e1;
+      }
+
+      .modal-actions {
+        display: flex;
+        align-items: center;
+        gap: 0.75rem;
+        padding: 0.75rem 1.25rem 1rem;
+        flex-wrap: wrap;
+      }
+
+      .modal-actions button {
+        border: none;
+        background: #0f172a;
+        color: #fff;
+        padding: 0.55rem 1rem;
+        border-radius: 0.5rem;
+        cursor: pointer;
+        font-size: 0.95rem;
+      }
+
+      .modal-actions button.secondary {
+        background: #e2e8f0;
+        color: #0f172a;
+      }
+
+      .modal-actions button:hover {
+        opacity: 0.9;
+      }
+
+      .modal-hint {
+        color: #475569;
+        font-size: 0.85rem;
+        margin-left: auto;
+        display: flex;
+        align-items: center;
+        gap: 0.35rem;
+      }
     </style>
   </head>
   <body>
     <div class="tab-bar">
       <div id="tabs" class="tabs"></div>
+      <button
+        id="settings-button"
+        class="tab-button tab-toggle"
+        type="button"
+        aria-label="Settings"
+        title="Settings"
+      >
+        ⚙
+      </button>
       <button
         id="toggle-tabs"
         class="tab-button tab-toggle"
@@ -163,6 +320,27 @@
       </button>
     </div>
     <textarea id="note" autofocus placeholder="Start typing..." spellcheck="false"></textarea>
+    <div id="settings-modal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="settings-title">
+      <div class="modal-content">
+        <header class="modal-header">
+          <div>
+            <div id="settings-title" class="modal-title">Settings (JSON)</div>
+            <div class="modal-subtitle">Edit and save configuration for sync or future features.</div>
+          </div>
+          <button id="settings-close" class="icon-button" type="button" aria-label="Close settings">×</button>
+        </header>
+        <textarea id="settings-editor" class="settings-editor" spellcheck="false"></textarea>
+        <div id="settings-error" class="settings-error" aria-live="polite"></div>
+        <div id="settings-suggestions" class="settings-suggestions hidden" aria-live="polite"></div>
+        <div class="modal-actions">
+          <button id="settings-save" type="button">Save</button>
+          <button id="settings-cancel" type="button" class="secondary">Cancel</button>
+          <div class="modal-hint">Stored at localStorage key <code>pad.settings</code>.</div>
+        </div>
+      </div>
+    </div>
+    <script src="./settings.js"></script>
+    <script src="./sync.js"></script>
     <script src="./renderer.js"></script>
   </body>
 </html>

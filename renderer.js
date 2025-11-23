@@ -2,6 +2,14 @@ const note = document.getElementById('note');
 const tabsContainer = document.getElementById('tabs');
 const addTabButton = document.getElementById('add-tab');
 const toggleTabsButton = document.getElementById('toggle-tabs');
+const settingsButton = document.getElementById('settings-button');
+const settingsModal = document.getElementById('settings-modal');
+const settingsEditor = document.getElementById('settings-editor');
+const settingsSaveButton = document.getElementById('settings-save');
+const settingsCancelButton = document.getElementById('settings-cancel');
+const settingsCloseButton = document.getElementById('settings-close');
+const settingsError = document.getElementById('settings-error');
+const settingsSuggestions = document.getElementById('settings-suggestions');
 
 const STORAGE_KEY = 'pad.tabs';
 const LEGACY_STORAGE_KEY = 'pad.note';
@@ -12,6 +20,20 @@ const state = loadState();
 const isMac = navigator.platform.toUpperCase().includes('MAC');
 let draggingTabId = null;
 let tabsExpanded = loadTabsExpandedPreference();
+const syncService = padSync.create({
+  getStateSnapshot: () => ({
+    tabs: state.tabs,
+    activeTabId: state.activeTabId,
+    nextTabNumber: state.nextTabNumber,
+    tabsExpanded,
+  }),
+  persistState,
+  persistTabsLayout: persistTabsExpandedPreference,
+});
+const syncWorker = padSync.startWorker({
+  getSettings: () => padSettings.get(),
+  getSnapshot: () => syncService.getSnapshot(),
+});
 
 if (window.padAPI?.onFileOpened) {
   window.padAPI.onFileOpened(handleExternalFileOpen);
@@ -65,6 +87,27 @@ toggleTabsButton.addEventListener('click', () => {
   applyTabsLayoutPreference();
   persistTabsExpandedPreference();
 });
+
+settingsButton.addEventListener('click', openSettingsModal);
+settingsSaveButton.addEventListener('click', saveSettingsFromEditor);
+settingsCancelButton.addEventListener('click', closeSettingsModal);
+settingsCloseButton.addEventListener('click', closeSettingsModal);
+
+settingsModal.addEventListener('click', event => {
+  if (event.target === settingsModal) {
+    closeSettingsModal();
+  }
+});
+
+document.addEventListener('keydown', event => {
+  if (event.key === 'Escape' && !settingsModal.classList.contains('hidden')) {
+    closeSettingsModal();
+  }
+});
+
+settingsEditor.addEventListener('input', handleSettingsEditorChange);
+settingsEditor.addEventListener('click', handleSettingsEditorChange);
+settingsEditor.addEventListener('keyup', handleSettingsEditorChange);
 
 tabsContainer.addEventListener('dragover', event => {
   if (!draggingTabId) {
@@ -466,4 +509,98 @@ function moveTabToIndex(tabId, rawTargetIndex) {
 
   state.tabs.splice(targetIndex, 0, tab);
   return true;
+}
+
+window.padBackup = syncService;
+
+function openSettingsModal() {
+  try {
+    const current = padSettings.get();
+    settingsEditor.value = JSON.stringify(current, null, 2);
+    renderFolderSuggestions(current);
+    settingsError.textContent = '';
+    settingsModal.classList.remove('hidden');
+    settingsEditor.focus();
+    settingsEditor.setSelectionRange(settingsEditor.value.length, settingsEditor.value.length);
+  } catch (error) {
+    console.error('Failed to open settings', error);
+    settingsError.textContent = 'Failed to load settings.';
+  }
+}
+
+function closeSettingsModal() {
+  settingsModal.classList.add('hidden');
+}
+
+function saveSettingsFromEditor() {
+  try {
+    const parsed = JSON.parse(settingsEditor.value);
+    const saved = padSettings.save(parsed);
+    settingsEditor.value = JSON.stringify(saved, null, 2);
+    renderFolderSuggestions(saved);
+    const hadFolder = parsed?.sync && typeof parsed.sync.folder === 'string' && parsed.sync.folder.trim();
+    if (hadFolder && !saved.sync.folder) {
+      settingsError.textContent = 'Settings saved, but sync.folder was cleared: remove control characters or escape backslashes (e.g. C:\\\\path or C:/path).';
+    } else {
+      settingsError.textContent = 'Settings saved.';
+    }
+    setTimeout(closeSettingsModal, 300);
+  } catch (error) {
+    console.warn('Failed to save settings', error);
+    settingsError.textContent = 'Invalid JSON. Please fix and try again.';
+  }
+}
+
+function handleSettingsEditorChange() {
+  try {
+    const current = JSON.parse(settingsEditor.value);
+    renderFolderSuggestions(current);
+  } catch {
+    hideFolderSuggestions();
+  }
+}
+
+function renderFolderSuggestions(settingsSnapshot) {
+  const candidate = settingsSnapshot?.sync?.folder;
+  const partial = typeof candidate === 'string' ? candidate : '';
+  const recent = padSettings.getRecentFolders();
+  const matching = recent.filter(item =>
+    partial ? item.toLowerCase().startsWith(partial.toLowerCase()) : true,
+  );
+
+  settingsSuggestions.textContent = '';
+
+  if (!matching.length) {
+    settingsSuggestions.classList.add('hidden');
+    return;
+  }
+
+  matching.forEach(path => {
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.textContent = path;
+    button.addEventListener('click', () => applyFolderSuggestion(path));
+    settingsSuggestions.appendChild(button);
+  });
+
+  settingsSuggestions.classList.remove('hidden');
+}
+
+function applyFolderSuggestion(folderPath) {
+  try {
+    const parsed = JSON.parse(settingsEditor.value);
+    if (!parsed.sync || typeof parsed.sync !== 'object') {
+      parsed.sync = {};
+    }
+    parsed.sync.folder = folderPath;
+    settingsEditor.value = JSON.stringify(parsed, null, 2);
+    renderFolderSuggestions(parsed);
+  } catch (error) {
+    console.warn('Failed to apply folder suggestion', error);
+  }
+}
+
+function hideFolderSuggestions() {
+  settingsSuggestions.textContent = '';
+  settingsSuggestions.classList.add('hidden');
 }

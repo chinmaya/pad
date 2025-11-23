@@ -1,6 +1,7 @@
-const { app, BrowserWindow, dialog, Menu } = require('electron');
+const { app, BrowserWindow, dialog, Menu, ipcMain } = require('electron');
 const fs = require('fs/promises');
 const path = require('path');
+const os = require('os');
 
 const isMac = process.platform === 'darwin';
 
@@ -115,6 +116,7 @@ function createMainWindow() {
 app.whenReady().then(() => {
   createMainWindow();
   buildMenu();
+  registerSyncHandlers();
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) {
@@ -128,3 +130,29 @@ app.on('window-all-closed', () => {
     app.quit();
   }
 });
+
+function registerSyncHandlers() {
+  ipcMain.handle('pad:save-snapshot', async (_event, payload) => {
+    if (!payload || typeof payload !== 'object') {
+      return { ok: false, error: 'Invalid payload' };
+    }
+
+    const { folderPath, content } = payload;
+    if (typeof folderPath !== 'string' || !folderPath.trim()) {
+      return { ok: false, error: 'Missing folderPath' };
+    }
+
+    const safeFolder = path.resolve(folderPath);
+    const fileName = `save_${os.hostname()}.json`;
+    const targetPath = path.join(safeFolder, fileName);
+
+    try {
+      await fs.mkdir(safeFolder, { recursive: true });
+      await fs.writeFile(targetPath, content, 'utf8');
+      return { ok: true, path: targetPath };
+    } catch (error) {
+      console.error('Failed to write snapshot', error);
+      return { ok: false, error: error.message };
+    }
+  });
+}
