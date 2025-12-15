@@ -335,12 +335,11 @@
         <div class="modal-actions">
           <button id="settings-save" type="button">Save</button>
           <button id="settings-cancel" type="button" class="secondary">Cancel</button>
-          <div class="modal-hint">Stored at localStorage key <code>pad.settings</code>.</div>
+          <div class="modal-hint">Stored in IndexedDB (persists across restore)</div>
         </div>
       </div>
     </div>
-    <script src="./settings.js"></script>
-    <script src="./sync.js"></script>
+    <script src="./app-settings-db.js"></script>
     <script src="./renderer.js"></script>
   </body>
 </html>

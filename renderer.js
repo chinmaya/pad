@@ -20,20 +20,6 @@ const state = loadState();
 const isMac = navigator.platform.toUpperCase().includes('MAC');
 let draggingTabId = null;
 let tabsExpanded = loadTabsExpandedPreference();
-const syncService = padSync.create({
-  getStateSnapshot: () => ({
-    tabs: state.tabs,
-    activeTabId: state.activeTabId,
-    nextTabNumber: state.nextTabNumber,
-    tabsExpanded,
-  }),
-  persistState,
-  persistTabsLayout: persistTabsExpandedPreference,
-});
-const syncWorker = padSync.startWorker({
-  getSettings: () => padSettings.get(),
-  getSnapshot: () => syncService.getSnapshot(),
-});
 
 if (window.padAPI?.onFileOpened) {
   window.padAPI.onFileOpened(handleExternalFileOpen);
@@ -42,6 +28,7 @@ if (window.padAPI?.onFileOpened) {
 renderTabs();
 applyTabsLayoutPreference();
 syncNoteWithActiveTab();
+initializeAutoBackup();
 
 note.addEventListener('input', event => {
   const active = getActiveTab();
@@ -513,11 +500,11 @@ function moveTabToIndex(tabId, rawTargetIndex) {
 
 window.padBackup = syncService;
 
-function openSettingsModal() {
+async function openSettingsModal() {
   try {
-    const current = padSettings.get();
-    settingsEditor.value = JSON.stringify(current, null, 2);
-    renderFolderSuggestions(current);
+    const settings = await padAppSettings.get();
+    settingsEditor.value = JSON.stringify(settings, null, 2);
+    await renderFolderSuggestions(settings);
     settingsError.textContent = '';
     settingsModal.classList.remove('hidden');
     settingsEditor.focus();
@@ -532,18 +519,25 @@ function closeSettingsModal() {
   settingsModal.classList.add('hidden');
 }
 
-function saveSettingsFromEditor() {
+async function saveSettingsFromEditor() {
   try {
     const parsed = JSON.parse(settingsEditor.value);
-    const saved = padSettings.save(parsed);
+    const saved = await padAppSettings.save(parsed);
+
     settingsEditor.value = JSON.stringify(saved, null, 2);
-    renderFolderSuggestions(saved);
-    const hadFolder = parsed?.sync && typeof parsed.sync.folder === 'string' && parsed.sync.folder.trim();
-    if (hadFolder && !saved.sync.folder) {
-      settingsError.textContent = 'Settings saved, but sync.folder was cleared: remove control characters or escape backslashes (e.g. C:\\\\path or C:/path).';
+    await renderFolderSuggestions(saved);
+
+    const hadFolder = parsed?.backup && typeof parsed.backup.folder === 'string' && parsed.backup.folder.trim();
+    if (hadFolder && !saved.backup.folder) {
+      settingsError.textContent = 'Settings saved, but backup.folder was cleared: remove control characters or escape backslashes (e.g. C:\\\\path or C:/path).';
     } else {
       settingsError.textContent = 'Settings saved.';
     }
+
+    if (window.padAPI?.updateAutoBackup) {
+      window.padAPI.updateAutoBackup();
+    }
+
     setTimeout(closeSettingsModal, 300);
   } catch (error) {
     console.warn('Failed to save settings', error);
@@ -560,10 +554,10 @@ function handleSettingsEditorChange() {
   }
 }
 
-function renderFolderSuggestions(settingsSnapshot) {
-  const candidate = settingsSnapshot?.sync?.folder;
+async function renderFolderSuggestions(settingsSnapshot) {
+  const candidate = settingsSnapshot?.backup?.folder;
   const partial = typeof candidate === 'string' ? candidate : '';
-  const recent = padSettings.getRecentFolders();
+  const recent = await padAppSettings.getRecentFolders();
   const matching = recent.filter(item =>
     partial ? item.toLowerCase().startsWith(partial.toLowerCase()) : true,
   );
@@ -589,10 +583,10 @@ function renderFolderSuggestions(settingsSnapshot) {
 function applyFolderSuggestion(folderPath) {
   try {
     const parsed = JSON.parse(settingsEditor.value);
-    if (!parsed.sync || typeof parsed.sync !== 'object') {
-      parsed.sync = {};
+    if (!parsed.backup || typeof parsed.backup !== 'object') {
+      parsed.backup = {};
     }
-    parsed.sync.folder = folderPath;
+    parsed.backup.folder = folderPath;
     settingsEditor.value = JSON.stringify(parsed, null, 2);
     renderFolderSuggestions(parsed);
   } catch (error) {
@@ -603,4 +597,10 @@ function applyFolderSuggestion(folderPath) {
 function hideFolderSuggestions() {
   settingsSuggestions.textContent = '';
   settingsSuggestions.classList.add('hidden');
+}
+
+function initializeAutoBackup() {
+  if (window.padAPI?.updateAutoBackup) {
+    window.padAPI.updateAutoBackup();
+  }
 }

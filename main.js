@@ -103,6 +103,15 @@ function buildMenu(backups = []) {
           },
         },
         { type: 'separator' },
+        {
+          label: 'Choose Backup Folder…',
+          click: async (_menuItem, browserWindow) => {
+            const targetWindow =
+              browserWindow ?? BrowserWindow.getFocusedWindow() ?? BrowserWindow.getAllWindows()[0];
+            await handleChooseBackupFolderRequest(targetWindow);
+          },
+        },
+        { type: 'separator' },
         ...(backups.length
           ? backups.map(entry => ({
               label: `Restore ${entry.displayName}`,
@@ -148,6 +157,7 @@ app.whenReady().then(() => {
   createMainWindow();
   refreshMenu();
   registerSyncHandlers();
+  registerBackupHandlers();
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) {
@@ -195,7 +205,13 @@ async function handleBackupRequest(targetWindow) {
   }
 
   try {
-    const result = await backupManager.create(window);
+    const maxBackups = await getMaxBackupsSetting();
+    const backupFolder = await getBackupFolderSetting();
+    const options = { maxBackups };
+    if (backupFolder) {
+      options.directory = backupFolder;
+    }
+    const result = await backupManager.create(window, options);
     if (!result.ok) {
       throw new Error(result.error || 'Unknown error');
     }
@@ -222,6 +238,41 @@ async function handleRestoreRequest(targetWindow, backupPath) {
   }
 
   try {
+    const backupFolder = await getBackupFolderSetting();
+    const backupStatus = await backupManager.isCurrentStateBackedUp(window, backupFolder || null);
+    if (!backupStatus.backed) {
+      const { response } = await dialog.showMessageBox(window, {
+        type: 'warning',
+        message: 'Current state not backed up',
+        detail: 'Your current state is not saved in the latest backup. Would you like to create a backup before restoring?',
+        buttons: ['Backup & Restore', 'Restore Without Backup', 'Cancel'],
+        defaultId: 0,
+        cancelId: 2,
+      });
+
+      if (response === 2) {
+        return;
+      }
+
+      if (response === 0) {
+        const maxBackups = await getMaxBackupsSetting();
+        const options = { maxBackups };
+        if (backupFolder) {
+          options.directory = backupFolder;
+        }
+        const backupResult = await backupManager.create(window, options);
+        if (!backupResult.ok) {
+          await dialog.showMessageBox(window, {
+            type: 'error',
+            message: 'Backup failed',
+            detail: `Could not create backup: ${backupResult.error}. Restore cancelled.`,
+          });
+          return;
+        }
+        await refreshMenu();
+      }
+    }
+
     const result = await backupManager.restore(window, backupPath);
     if (!result.ok) {
       throw new Error(result.error || 'Unknown error');
@@ -244,8 +295,127 @@ async function handleRestoreRequest(targetWindow, backupPath) {
   }
 }
 
+async function handleChooseBackupFolderRequest(targetWindow) {
+  const window = getTargetWindow(targetWindow);
+  if (!window || window.isDestroyed()) {
+    return;
+  }
+
+  try {
+    const currentFolder = await getBackupFolderSetting();
+    const { canceled, filePaths } = await dialog.showOpenDialog(window, {
+      title: 'Choose Backup Folder',
+      defaultPath: currentFolder || backupManager.getDefaultBackupDirectory(),
+      properties: ['openDirectory'],
+    });
+
+    if (canceled || !filePaths || filePaths.length === 0) {
+      return;
+    }
+
+    const folderPath = filePaths[0];
+    await saveBackupFolderSetting(window, folderPath);
+    await refreshMenu();
+
+    await dialog.showMessageBox(window, {
+      type: 'info',
+      message: 'Backup folder updated',
+      detail: `Backups will now be saved to:\n${folderPath}`,
+    });
+  } catch (error) {
+    console.error('Failed to choose backup folder', error);
+    await dialog.showMessageBox(window, {
+      type: 'error',
+      message: 'Failed to set backup folder',
+      detail: error.message,
+    });
+  }
+}
+
+async function getBackupFolderSetting() {
+  const window = getTargetWindow();
+  if (!window || window.isDestroyed()) {
+    return '';
+  }
+
+  try {
+    const settings = await window.webContents.executeJavaScript('padAppSettings.getBackupSettings()');
+    return settings?.folder || '';
+  } catch {
+    return '';
+  }
+}
+
+async function saveBackupFolderSetting(window, folderPath) {
+  const escaped = folderPath.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+  await window.webContents.executeJavaScript(`padAppSettings.updateBackupSettings({ folder: '${escaped}' })`);
+}
+
+function registerBackupHandlers() {
+  ipcMain.handle('pad:update-auto-backup', async () => {
+    await updateAutoBackup();
+    return { ok: true };
+  });
+
+  ipcMain.handle('pad:get-backup-settings', async () => {
+    const maxBackups = await getMaxBackupsSetting();
+    const autoBackup = await getAutoBackupSettings();
+    return { maxBackups, autoBackup };
+  });
+}
+
+async function updateAutoBackup() {
+  const window = getTargetWindow();
+  if (!window || window.isDestroyed()) {
+    backupManager.stopAutoBackup();
+    return;
+  }
+
+  const settings = await getAutoBackupSettings();
+  if (settings.enabled) {
+    const backupFolder = await getBackupFolderSetting();
+    backupManager.startAutoBackup(window, settings.intervalMinutes, backupFolder || null, () => {
+      refreshMenu();
+    });
+  } else {
+    backupManager.stopAutoBackup();
+  }
+}
+
+async function getMaxBackupsSetting() {
+  const window = getTargetWindow();
+  if (!window || window.isDestroyed()) {
+    return 10;
+  }
+
+  try {
+    const settings = await window.webContents.executeJavaScript('padAppSettings.getBackupSettings()');
+    return settings?.maxBackups ?? 10;
+  } catch {
+    return 10;
+  }
+}
+
+async function getAutoBackupSettings() {
+  const window = getTargetWindow();
+  if (!window || window.isDestroyed()) {
+    return { enabled: false, intervalMinutes: 30 };
+  }
+
+  try {
+    const settings = await window.webContents.executeJavaScript('padAppSettings.getBackupSettings()');
+    return {
+      enabled: settings?.autoBackupEnabled ?? false,
+      intervalMinutes: settings?.autoBackupIntervalMinutes ?? 30,
+    };
+  } catch {
+    return { enabled: false, intervalMinutes: 30 };
+  }
+}
+
 async function refreshMenu() {
-  const backups = await backupManager.list();
+  const backupFolder = await getBackupFolderSetting();
+  const backups = await backupManager.list(backupFolder || null);
   buildMenu(backups);
 }
 

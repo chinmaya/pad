@@ -42,8 +42,8 @@ function startWorker({ intervalMs = 10_000, getSettings, getSnapshot }) {
   let timer = null;
 
   async function tick() {
-    const settings = getSettings();
-    const folderPath = settings?.sync?.folder;
+    const settings = await getSettings();
+    const folderPath = settings?.folder;
     if (!folderPath || typeof folderPath !== 'string' || !folderPath.trim()) {
       return;
     }

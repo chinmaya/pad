@@ -19,4 +19,10 @@ contextBridge.exposeInMainWorld('padAPI', {
     }
     return ipcRenderer.invoke('pad:save-snapshot', snapshot);
   },
+  updateAutoBackup() {
+    return ipcRenderer.invoke('pad:update-auto-backup');
+  },
+  getBackupSettings() {
+    return ipcRenderer.invoke('pad:get-backup-settings');
+  },
 });

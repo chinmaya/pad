@@ -37,6 +37,7 @@ function normalizeSettings(candidate) {
   }
 
   const folder = sanitizeFolderPath(candidate.sync?.folder);
+
   const normalized = {
     sync: {
       enabled: !!candidate.sync?.enabled,
