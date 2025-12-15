@@ -2,8 +2,12 @@ const { app, BrowserWindow, dialog, Menu, ipcMain } = require('electron');
 const fs = require('fs/promises');
 const path = require('path');
 const os = require('os');
+const { createBackupManager } = require('./backup');
 
 const isMac = process.platform === 'darwin';
+
+let mainWindow = null;
+const backupManager = createBackupManager({ app });
 
 async function openFileDialog(targetWindow) {
   if (!targetWindow || targetWindow.isDestroyed()) {
@@ -39,7 +43,7 @@ async function openFileDialog(targetWindow) {
   }
 }
 
-function buildMenu() {
+function buildMenu(backups = []) {
   const template = [
     ...(isMac
       ? [
@@ -87,13 +91,39 @@ function buildMenu() {
         { role: 'selectAll' },
       ],
     },
+    {
+      label: 'Backup',
+      submenu: [
+        {
+          label: 'Create Backup',
+          click: async (_menuItem, browserWindow) => {
+            const targetWindow =
+              browserWindow ?? BrowserWindow.getFocusedWindow() ?? BrowserWindow.getAllWindows()[0];
+            await handleBackupRequest(targetWindow);
+          },
+        },
+        { type: 'separator' },
+        ...(backups.length
+          ? backups.map(entry => ({
+              label: `Restore ${entry.displayName}`,
+              click: async (_menuItem, browserWindow) => {
+                const targetWindow =
+                  browserWindow ??
+                  BrowserWindow.getFocusedWindow() ??
+                  BrowserWindow.getAllWindows()[0];
+                await handleRestoreRequest(targetWindow, entry.path);
+              },
+            }))
+          : [{ label: 'No backups yet', enabled: false }]),
+      ],
+    },
   ];
 
   Menu.setApplicationMenu(Menu.buildFromTemplate(template));
 }
 
 function createMainWindow() {
-  const mainWindow = new BrowserWindow({
+  const window = new BrowserWindow({
     width: 800,
     height: 600,
     minWidth: 400,
@@ -105,17 +135,18 @@ function createMainWindow() {
     }
   });
 
-  mainWindow.once('ready-to-show', () => {
-    mainWindow.show();
+  window.once('ready-to-show', () => {
+    window.show();
   });
 
-  mainWindow.loadFile('index.html');
-  return mainWindow;
+  window.loadFile('index.html');
+  mainWindow = window;
+  return window;
 }
 
 app.whenReady().then(() => {
   createMainWindow();
-  buildMenu();
+  refreshMenu();
   registerSyncHandlers();
 
   app.on('activate', () => {
@@ -155,4 +186,75 @@ function registerSyncHandlers() {
       return { ok: false, error: error.message };
     }
   });
+}
+
+async function handleBackupRequest(targetWindow) {
+  const window = getTargetWindow(targetWindow);
+  if (!window || window.isDestroyed()) {
+    return;
+  }
+
+  try {
+    const result = await backupManager.create(window);
+    if (!result.ok) {
+      throw new Error(result.error || 'Unknown error');
+    }
+    await refreshMenu();
+    await dialog.showMessageBox(window, {
+      type: 'info',
+      message: 'Backup created',
+      detail: `Saved to:\n${result.path}`,
+    });
+  } catch (error) {
+    console.error('Failed to create backup', error);
+    await dialog.showMessageBox(window, {
+      type: 'error',
+      message: 'Backup failed',
+      detail: error.message,
+    });
+  }
+}
+
+async function handleRestoreRequest(targetWindow, backupPath) {
+  const window = getTargetWindow(targetWindow);
+  if (!window || window.isDestroyed()) {
+    return;
+  }
+
+  try {
+    const result = await backupManager.restore(window, backupPath);
+    if (!result.ok) {
+      throw new Error(result.error || 'Unknown error');
+    }
+
+    await refreshMenu();
+    await dialog.showMessageBox(window, {
+      type: 'info',
+      message: 'Restore complete',
+      detail: 'Local storage restored. Reloading your tabs.',
+    });
+    window.webContents.reload();
+  } catch (error) {
+    console.error('Failed to restore backup', error);
+    await dialog.showMessageBox(window, {
+      type: 'error',
+      message: 'Restore failed',
+      detail: error.message,
+    });
+  }
+}
+
+async function refreshMenu() {
+  const backups = await backupManager.list();
+  buildMenu(backups);
+}
+
+function getTargetWindow(targetWindow) {
+  if (targetWindow && !targetWindow.isDestroyed()) {
+    return targetWindow;
+  }
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    return mainWindow;
+  }
+  return BrowserWindow.getFocusedWindow() ?? BrowserWindow.getAllWindows()[0] ?? null;
 }
