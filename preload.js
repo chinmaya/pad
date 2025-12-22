@@ -13,6 +13,18 @@ contextBridge.exposeInMainWorld('padAPI', {
     ipcRenderer.on('pad:file-opened', listener);
     return () => ipcRenderer.removeListener('pad:file-opened', listener);
   },
+  onRestoreMerge(callback) {
+    if (typeof callback !== 'function') {
+      return () => {};
+    }
+
+    const listener = (_event, payload) => {
+      callback(payload);
+    };
+
+    ipcRenderer.on('pad:restore-merge', listener);
+    return () => ipcRenderer.removeListener('pad:restore-merge', listener);
+  },
   saveSnapshot(snapshot) {
     if (!snapshot || typeof snapshot !== 'object') {
       return Promise.resolve({ ok: false, error: 'Invalid snapshot' });

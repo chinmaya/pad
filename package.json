@@ -6,6 +6,7 @@
   "scripts": {
     "start": "electron .",
     "dev": "electron . --user-data-dir=.electron-dev-data",
+    "devalt": "electron . --user-data-dir=.electron-devalt-data",
     "package:mac": "electron-packager . Pad --platform=darwin --arch=universal --out=dist --overwrite",
     "package:win11": "electron-packager . Pad --platform=win32 --arch=x64 --out=dist --overwrite"
   },

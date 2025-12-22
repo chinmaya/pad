@@ -3,3 +3,4 @@
 dist/
 node_modules/
 .electron-dev-data/
+.electron-devalt-data/

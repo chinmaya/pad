@@ -3,6 +3,7 @@ const path = require('path');
 const os = require('os');
 
 const BACKUP_PREFIX = 'padbackup-';
+const RESTORE_PREFIX = 'padbackup-restore-';
 const BACKUP_EXTENSION = '.json';
 const DEFAULT_MAX_BACKUPS = 10;
 
@@ -32,6 +33,40 @@ function createBackupManager({ app }) {
       return { ok: true, path: targetPath };
     } catch (error) {
       console.error('Failed to create backup', error);
+      return { ok: false, error: error.message };
+    }
+  }
+
+  async function createRestoreSafetyBackup(window, options = {}) {
+    if (!window || window.isDestroyed()) {
+      return { ok: false, error: 'No active window' };
+    }
+
+    try {
+      const snapshot = await exportPadStorage(window);
+      const backupDirectory = options.directory || (await ensureBackupDirectory());
+      await fs.mkdir(backupDirectory, { recursive: true });
+      const machineName = os.hostname().replace(/[^a-zA-Z0-9-_]/g, '');
+      const fileName = `${RESTORE_PREFIX}${machineName}${BACKUP_EXTENSION}`;
+      const targetPath = path.join(backupDirectory, fileName);
+
+      await fs.writeFile(
+        targetPath,
+        JSON.stringify(
+          {
+            createdAt: new Date().toISOString(),
+            storage: snapshot,
+            restoreSafety: true,
+          },
+          null,
+          2,
+        ),
+        'utf8',
+      );
+
+      return { ok: true, path: targetPath };
+    } catch (error) {
+      console.error('Failed to create restore safety backup', error);
       return { ok: false, error: error.message };
     }
   }
@@ -98,7 +133,8 @@ function createBackupManager({ app }) {
           entry =>
             entry.isFile() &&
             entry.name.startsWith(BACKUP_PREFIX) &&
-            entry.name.endsWith(BACKUP_EXTENSION),
+            entry.name.endsWith(BACKUP_EXTENSION) &&
+            !entry.name.startsWith(RESTORE_PREFIX),
         )
         .map(entry => {
           const displayName = entry.name.replace(BACKUP_EXTENSION, '');
@@ -171,7 +207,8 @@ function createBackupManager({ app }) {
             entry.isFile() &&
             entry.name.startsWith(BACKUP_PREFIX) &&
             entry.name.endsWith(BACKUP_EXTENSION) &&
-            !entry.name.startsWith(`${BACKUP_PREFIX}auto-`),
+            !entry.name.startsWith(`${BACKUP_PREFIX}auto-`) &&
+            !entry.name.startsWith(RESTORE_PREFIX),
         )
         .map(entry => ({
           name: entry.name,
@@ -227,6 +264,7 @@ function createBackupManager({ app }) {
 
   return Object.freeze({
     create,
+    createRestoreSafetyBackup,
     createAutoBackup,
     restore,
     list,

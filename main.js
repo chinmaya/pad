@@ -239,52 +239,62 @@ async function handleRestoreRequest(targetWindow, backupPath) {
 
   try {
     const backupFolder = await getBackupFolderSetting();
-    const backupStatus = await backupManager.isCurrentStateBackedUp(window, backupFolder || null);
-    if (!backupStatus.backed) {
-      const { response } = await dialog.showMessageBox(window, {
-        type: 'warning',
-        message: 'Current state not backed up',
-        detail: 'Your current state is not saved in the latest backup. Would you like to create a backup before restoring?',
-        buttons: ['Backup & Restore', 'Restore Without Backup', 'Cancel'],
-        defaultId: 0,
-        cancelId: 2,
-      });
 
-      if (response === 2) {
-        return;
-      }
-
-      if (response === 0) {
-        const maxBackups = await getMaxBackupsSetting();
-        const options = { maxBackups };
-        if (backupFolder) {
-          options.directory = backupFolder;
-        }
-        const backupResult = await backupManager.create(window, options);
-        if (!backupResult.ok) {
-          await dialog.showMessageBox(window, {
-            type: 'error',
-            message: 'Backup failed',
-            detail: `Could not create backup: ${backupResult.error}. Restore cancelled.`,
-          });
-          return;
-        }
-        await refreshMenu();
-      }
-    }
-
-    const result = await backupManager.restore(window, backupPath);
-    if (!result.ok) {
-      throw new Error(result.error || 'Unknown error');
-    }
-
-    await refreshMenu();
-    await dialog.showMessageBox(window, {
-      type: 'info',
-      message: 'Restore complete',
-      detail: 'Local storage restored. Reloading your tabs.',
+    const safetyBackupResult = await backupManager.createRestoreSafetyBackup(window, {
+      directory: backupFolder || undefined,
     });
-    window.webContents.reload();
+    if (!safetyBackupResult.ok) {
+      await dialog.showMessageBox(window, {
+        type: 'error',
+        message: 'Restore cancelled',
+        detail: `Could not create restore safety backup:\n${safetyBackupResult.error}`,
+      });
+      return;
+    }
+
+    const { response } = await dialog.showMessageBox(window, {
+      type: 'question',
+      message: 'Restore backup',
+      detail:
+        `A safety backup was created first:\n${safetyBackupResult.path}\n\n` +
+        'How do you want to restore?',
+      buttons: ['Merge', 'Replace', 'Cancel'],
+      defaultId: 0,
+      cancelId: 2,
+    });
+
+    if (response === 2) {
+      return;
+    }
+
+    if (response === 1) {
+      const result = await backupManager.restore(window, backupPath);
+      if (!result.ok) {
+        throw new Error(result.error || 'Unknown error');
+      }
+
+      await refreshMenu();
+      await dialog.showMessageBox(window, {
+        type: 'info',
+        message: 'Restore complete',
+        detail: 'Local storage restored. Reloading your tabs.',
+      });
+      window.webContents.reload();
+      return;
+    }
+
+    const raw = await fs.readFile(backupPath, 'utf8');
+    const parsed = JSON.parse(raw);
+    const storage = parsed?.storage;
+    if (!storage || typeof storage !== 'object') {
+      throw new Error('Backup file is missing storage content.');
+    }
+
+    window.webContents.send('pad:restore-merge', {
+      storage,
+      sourceBackupPath: backupPath,
+      safetyBackupPath: safetyBackupResult.path,
+    });
   } catch (error) {
     console.error('Failed to restore backup', error);
     await dialog.showMessageBox(window, {

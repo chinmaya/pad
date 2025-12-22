@@ -95,6 +95,16 @@
         border-color: color-mix(in srgb, currentColor 45%, transparent);
       }
 
+      .tab.conflict {
+        border-color: color-mix(in srgb, #f59e0b 70%, transparent);
+        background: color-mix(in srgb, #f59e0b 18%, transparent);
+      }
+
+      .tab.conflict-delete {
+        border-color: color-mix(in srgb, #dc2626 70%, transparent);
+        background: color-mix(in srgb, #dc2626 18%, transparent);
+      }
+
       .tab.dragging {
         opacity: 0.6;
       }
@@ -157,6 +167,10 @@
         place-items: center;
         padding: 1.5rem;
         z-index: 5;
+      }
+
+      .hidden {
+        display: none;
       }
 
       .modal.hidden {
@@ -291,11 +305,71 @@
         align-items: center;
         gap: 0.35rem;
       }
+
+      .merge-body {
+        padding: 1rem 1.25rem 1.25rem;
+        display: grid;
+        gap: 0.75rem;
+      }
+
+      .merge-row {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 0.75rem;
+        min-height: 240px;
+      }
+
+      .merge-pane {
+        border: 1px solid rgba(0, 0, 0, 0.12);
+        border-radius: 0.5rem;
+        padding: 0.75rem;
+        background: rgba(0, 0, 0, 0.02);
+        overflow: auto;
+        white-space: pre;
+        font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New",
+          monospace;
+        font-size: 0.9rem;
+        line-height: 1.35;
+      }
+
+      .diff-line {
+        display: block;
+        padding: 0.05rem 0.35rem;
+        border-radius: 0.35rem;
+        margin: 0.05rem 0;
+      }
+
+      .diff-line.changed {
+        background: color-mix(in srgb, #f59e0b 22%, transparent);
+      }
+
+      .merge-textarea {
+        width: 100%;
+        min-height: 140px;
+        resize: vertical;
+        border: 1px solid rgba(0, 0, 0, 0.12);
+        border-radius: 0.5rem;
+        padding: 0.75rem;
+        font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New",
+          monospace;
+        font-size: 0.95rem;
+        outline: none;
+        box-sizing: border-box;
+      }
     </style>
   </head>
   <body>
     <div class="tab-bar">
       <div id="tabs" class="tabs"></div>
+      <button
+        id="resolve-conflicts"
+        class="tab-button tab-toggle hidden"
+        type="button"
+        aria-label="Resolve merge conflicts"
+        title="Resolve merge conflicts"
+      >
+        !
+      </button>
       <button
         id="settings-button"
         class="tab-button tab-toggle"
@@ -339,7 +413,43 @@
         </div>
       </div>
     </div>
+    <div id="merge-modal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="merge-title">
+      <div class="modal-content">
+        <header class="modal-header">
+          <div>
+            <div id="merge-title" class="modal-title">Resolve Merge Conflicts</div>
+            <div id="merge-subtitle" class="modal-subtitle"></div>
+          </div>
+          <button id="merge-close" class="icon-button" type="button" aria-label="Close merge resolver">×</button>
+        </header>
+        <div class="merge-body">
+          <label>
+            Conflict tab:
+            <select id="merge-tab-select"></select>
+          </label>
+          <div class="merge-row">
+            <pre id="merge-current" class="merge-pane" aria-label="Current content"></pre>
+            <pre id="merge-backup" class="merge-pane" aria-label="Backup content"></pre>
+          </div>
+          <textarea
+            id="merge-manual"
+            class="merge-textarea hidden"
+            spellcheck="false"
+            placeholder="Manual resolution (optional)…"
+          ></textarea>
+          <div class="modal-actions">
+            <button id="merge-keep-current" type="button">Keep Current</button>
+            <button id="merge-use-backup" type="button" class="secondary">Use Backup</button>
+            <button id="merge-keep-both" type="button" class="secondary">Keep Both</button>
+            <button id="merge-delete-tab" type="button" class="secondary">Delete Tab</button>
+            <button id="merge-use-manual" type="button" class="secondary">Use Manual</button>
+            <div class="modal-hint">Conflicts are stored in localStorage</div>
+          </div>
+        </div>
+      </div>
+    </div>
     <script src="./app-settings-db.js"></script>
+    <script src="./merge.js"></script>
     <script src="./renderer.js"></script>
   </body>
 </html>
