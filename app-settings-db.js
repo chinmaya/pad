@@ -5,8 +5,6 @@ const STORE_NAME = 'settings';
 const DEFAULT_BACKUP_SETTINGS = {
   folder: '',
   maxBackups: 10,
-  autoBackupEnabled: false,
-  autoBackupIntervalMinutes: 30,
 };
 
 let dbInstance = null;
@@ -96,11 +94,6 @@ function normalizeBackupSettings(candidate) {
   return {
     folder: sanitizeFolderPath(candidate.folder),
     maxBackups: normalizePositiveInt(candidate.maxBackups, DEFAULT_BACKUP_SETTINGS.maxBackups),
-    autoBackupEnabled: !!candidate.autoBackupEnabled,
-    autoBackupIntervalMinutes: normalizePositiveInt(
-      candidate.autoBackupIntervalMinutes,
-      DEFAULT_BACKUP_SETTINGS.autoBackupIntervalMinutes,
-    ),
   };
 }
 

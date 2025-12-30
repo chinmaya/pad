@@ -8,6 +8,7 @@ const isMac = process.platform === 'darwin';
 
 let mainWindow = null;
 const backupManager = createBackupManager({ app });
+const AUTO_BACKUP_INTERVAL_MINUTES = 1;
 
 async function openFileDialog(targetWindow) {
   if (!targetWindow || targetWindow.isDestroyed()) {
@@ -381,15 +382,10 @@ async function updateAutoBackup() {
     return;
   }
 
-  const settings = await getAutoBackupSettings();
-  if (settings.enabled) {
-    const backupFolder = await getBackupFolderSetting();
-    backupManager.startAutoBackup(window, settings.intervalMinutes, backupFolder || null, () => {
-      refreshMenu();
-    });
-  } else {
-    backupManager.stopAutoBackup();
-  }
+  const backupFolder = await getBackupFolderSetting();
+  backupManager.startAutoBackup(window, AUTO_BACKUP_INTERVAL_MINUTES, backupFolder || null, () => {
+    refreshMenu();
+  });
 }
 
 async function getMaxBackupsSetting() {
@@ -407,20 +403,7 @@ async function getMaxBackupsSetting() {
 }
 
 async function getAutoBackupSettings() {
-  const window = getTargetWindow();
-  if (!window || window.isDestroyed()) {
-    return { enabled: false, intervalMinutes: 30 };
-  }
-
-  try {
-    const settings = await window.webContents.executeJavaScript('padAppSettings.getBackupSettings()');
-    return {
-      enabled: settings?.autoBackupEnabled ?? false,
-      intervalMinutes: settings?.autoBackupIntervalMinutes ?? 30,
-    };
-  } catch {
-    return { enabled: false, intervalMinutes: 30 };
-  }
+  return { enabled: true, intervalMinutes: AUTO_BACKUP_INTERVAL_MINUTES };
 }
 
 async function refreshMenu() {
