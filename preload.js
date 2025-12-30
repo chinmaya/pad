@@ -37,4 +37,19 @@ contextBridge.exposeInMainWorld('padAPI', {
   getBackupSettings() {
     return ipcRenderer.invoke('pad:get-backup-settings');
   },
+  recordTabEvent(payload) {
+    if (!payload || typeof payload !== 'object') {
+      return Promise.resolve({ ok: false, error: 'Invalid payload' });
+    }
+    return ipcRenderer.invoke('pad:record-tab-event', payload);
+  },
+  markEventProcessed(payload) {
+    if (!payload || typeof payload !== 'object') {
+      return Promise.resolve({ ok: false, error: 'Invalid payload' });
+    }
+    return ipcRenderer.invoke('pad:mark-event-processed', payload);
+  },
+  getEventLogState() {
+    return ipcRenderer.invoke('pad:get-event-log-state');
+  },
 });

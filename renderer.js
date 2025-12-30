@@ -50,6 +50,119 @@ syncNoteWithActiveTab();
 initializeAutoBackup();
 updateResolveConflictsButton();
 
+function getTabIndexById(tabId) {
+  return state.tabs.findIndex(tab => tab.id === tabId);
+}
+
+function toEventTab(tab) {
+  if (!tab || typeof tab !== 'object') {
+    return null;
+  }
+  return {
+    id: tab.id,
+    title: tab.title,
+    fallbackTitle: tab.fallbackTitle,
+  };
+}
+
+function queueTabEvent(payload) {
+  if (!window.padAPI?.recordTabEvent) {
+    return;
+  }
+
+  try {
+    const promise = window.padAPI.recordTabEvent(payload);
+    if (promise && typeof promise.then === 'function') {
+      promise.catch(error => {
+        console.warn('Failed to record tab event', error);
+      });
+    }
+  } catch (error) {
+    console.warn('Failed to record tab event', error);
+  }
+}
+
+const EDIT_EVENT_INTERVAL_MS = 60_000;
+const pendingTabUpdates = new Map();
+
+function sendTabUpdateEventNow(tabId) {
+  const tab = state.tabs.find(entry => entry.id === tabId) ?? null;
+  if (!tab) {
+    return;
+  }
+
+  queueTabEvent({
+    type: 'update',
+    tab: toEventTab(tab),
+    tabIndex: getTabIndexById(tabId),
+  });
+}
+
+function scheduleTabUpdateEvent(tabId) {
+  const now = Date.now();
+  const entry = pendingTabUpdates.get(tabId) ?? { lastSentAt: 0, timer: null, dirty: false };
+  entry.dirty = true;
+
+  const elapsed = entry.lastSentAt ? now - entry.lastSentAt : 0;
+  if (elapsed >= EDIT_EVENT_INTERVAL_MS) {
+    if (entry.timer) {
+      clearTimeout(entry.timer);
+      entry.timer = null;
+    }
+    sendTabUpdateEventNow(tabId);
+    entry.lastSentAt = now;
+    entry.dirty = false;
+    pendingTabUpdates.set(tabId, entry);
+    return;
+  }
+
+  if (!entry.timer) {
+    entry.timer = setTimeout(() => {
+      const current = pendingTabUpdates.get(tabId);
+      if (!current) {
+        return;
+      }
+
+      current.timer = null;
+      if (current.dirty) {
+        sendTabUpdateEventNow(tabId);
+        current.lastSentAt = Date.now();
+        current.dirty = false;
+      }
+      pendingTabUpdates.set(tabId, current);
+    }, Math.max(0, EDIT_EVENT_INTERVAL_MS - elapsed));
+  }
+
+  pendingTabUpdates.set(tabId, entry);
+}
+
+function flushTabUpdateEvent(tabId, options = {}) {
+  const force = !!options.force;
+  const entry = pendingTabUpdates.get(tabId);
+  if (!entry) {
+    return;
+  }
+
+  if (force && entry.timer) {
+    clearTimeout(entry.timer);
+    entry.timer = null;
+  }
+
+  if (force && entry.dirty) {
+    sendTabUpdateEventNow(tabId);
+    entry.lastSentAt = Date.now();
+    entry.dirty = false;
+  }
+
+  pendingTabUpdates.set(tabId, entry);
+}
+
+window.addEventListener('beforeunload', () => {
+  for (const tabId of pendingTabUpdates.keys()) {
+    flushTabUpdateEvent(tabId, { force: true });
+  }
+});
+
 note.addEventListener('input', event => {
   const active = getActiveTab();
   if (!active) {
@@ -59,6 +172,7 @@ note.addEventListener('input', event => {
   active.content = event.target.value;
   const titleChanged = updateTabTitleFromContent(active);
   persistState();
+  scheduleTabUpdateEvent(active.id);
   if (titleChanged) {
     renderTabs();
   }
@@ -83,6 +197,11 @@ addTabButton.addEventListener('click', () => {
   state.tabs.push(newTab);
   state.activeTabId = newTab.id;
   persistState();
+  queueTabEvent({
+    type: 'insert',
+    tab: toEventTab(newTab),
+    tabIndex: state.tabs.length - 1,
+  });
   renderTabs();
   applyTabsLayoutPreference();
   syncNoteWithActiveTab();
@@ -604,6 +723,11 @@ function resolveMergeConflict(mode) {
   if (mode === 'delete_tab') {
     const index = state.tabs.findIndex(t => t.id === tabId);
     if (index !== -1) {
+      queueTabEvent({
+        type: 'delete',
+        tabId,
+        tabIndex: index,
+      });
       state.tabs.splice(index, 1);
       if (state.tabs.length === 0) {
         const newTab = createEmptyTab(getNextTabNumber());
@@ -641,6 +765,13 @@ function resolveMergeConflict(mode) {
   persistMergeConflicts();
   updateResolveConflictsButton();
   persistState();
+  if (mode !== 'delete_tab') {
+    queueTabEvent({
+      type: 'update',
+      tab: toEventTab(tab),
+      tabIndex: getTabIndexById(tab.id),
+    });
+  }
   renderTabs();
 
   if (mode !== 'delete_tab' && tab.id === state.activeTabId) {
@@ -914,6 +1045,11 @@ function handleExternalFileOpen(payload) {
   }
 
   persistState();
+  queueTabEvent({
+    type: 'update',
+    tab: toEventTab(active),
+    tabIndex: getTabIndexById(active.id),
+  });
   renderTabs();
   syncNoteWithActiveTab();
   note.focus();
@@ -955,6 +1091,12 @@ function closeTab(tabId) {
     }
   }
 
+  flushTabUpdateEvent(tabId, { force: true });
+  queueTabEvent({
+    type: 'delete',
+    tabId,
+    tabIndex,
+  });
   state.tabs.splice(tabIndex, 1);
 
   if (state.tabs.length === 0) {

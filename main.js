@@ -3,12 +3,15 @@ const fs = require('fs/promises');
 const path = require('path');
 const os = require('os');
 const { createBackupManager } = require('./backup');
+const { createEventLogManager } = require('./events');
 
 const isMac = process.platform === 'darwin';
 
 let mainWindow = null;
 const backupManager = createBackupManager({ app });
+const eventLogManager = createEventLogManager({ app });
 const AUTO_BACKUP_INTERVAL_MINUTES = 1;
+let tabChangeWriteQueue = Promise.resolve();
 
 async function openFileDialog(targetWindow) {
   if (!targetWindow || targetWindow.isDestroyed()) {
@@ -372,6 +375,48 @@ function registerBackupHandlers() {
     const maxBackups = await getMaxBackupsSetting();
     const autoBackup = await getAutoBackupSettings();
     return { maxBackups, autoBackup };
+  });
+
+  ipcMain.handle('pad:record-tab-event', async (_event, payload) => {
+    tabChangeWriteQueue = tabChangeWriteQueue.then(async () => {
+      const window = getTargetWindow();
+      const backupFolder = await getBackupFolderSetting();
+      const directory = backupFolder || null;
+
+      const eventResult = await eventLogManager.recordEvent(payload, directory);
+      const backupResult = await backupManager.createAutoBackup(window, directory);
+
+      return { ok: true, event: eventResult, backup: backupResult };
+    });
+
+    try {
+      return await tabChangeWriteQueue;
+    } catch (error) {
+      console.warn('Failed to record tab event', error);
+      return { ok: false, error: error.message };
+    }
+  });
+
+  ipcMain.handle('pad:mark-event-processed', async (_event, payload) => {
+    try {
+      const backupFolder = await getBackupFolderSetting();
+      const directory = backupFolder || null;
+      return await eventLogManager.markProcessed(payload, directory);
+    } catch (error) {
+      console.warn('Failed to mark event processed', error);
+      return { ok: false, error: error.message };
+    }
+  });
+
+  ipcMain.handle('pad:get-event-log-state', async () => {
+    try {
+      const backupFolder = await getBackupFolderSetting();
+      const directory = backupFolder || null;
+      return await eventLogManager.getState(directory);
+    } catch (error) {
+      console.warn('Failed to load event state', error);
+      return { ok: false, error: error.message };
+    }
   });
 }
 
