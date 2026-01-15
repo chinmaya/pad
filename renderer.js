@@ -23,18 +23,38 @@ const mergeUseBackupButton = document.getElementById('merge-use-backup');
 const mergeKeepBothButton = document.getElementById('merge-keep-both');
 const mergeDeleteTabButton = document.getElementById('merge-delete-tab');
 const mergeUseManualButton = document.getElementById('merge-use-manual');
+const leftPane = document.getElementById('left-pane');
+const paneToggleButton = document.getElementById('pane-toggle');
+const groupsList = document.getElementById('groups-list');
+const addGroupButton = document.getElementById('add-group');
+const collapsedGroupsContainer = document.getElementById('collapsed-groups');
 
 const STORAGE_KEY = 'pad.tabs';
 const LEGACY_STORAGE_KEY = 'pad.note';
 const MERGE_CONFLICTS_KEY = 'pad.mergeConflicts';
 const TITLE_MAX_LENGTH = 20;
+const GROUP_NAME_MAX_LENGTH = 30;
 const TAB_LAYOUT_STORAGE_KEY = 'pad.tabsLayoutExpanded';
+const LEFT_PANE_COLLAPSED_KEY = 'pad.leftPaneCollapsed';
+
+// Icons for groups and tabs - picked at random but persisted
+const GROUP_ICONS = [
+  '📁', '📂', '🗂️', '🗃️', '📦', '💼', '🎯', '⭐',
+];
+
+const TAB_ICONS = [
+  '📄', '📝', '📋', '📌', '📎', '🔖', '💡', '🔔',
+  '🏷️', '📊', '📈', '🔧', '⚙️', '🎨', '🎭', '🎪',
+  '🌟', '✨', '💫', '🔥', '❄️', '🌈', '🌸', '🍀',
+  '🎵', '🎬', '📷', '💎', '🎁', '🧩', '🔮', '🎲',
+];
 
 const state = loadState();
 const isMac = navigator.platform.toUpperCase().includes('MAC');
 let draggingTabId = null;
 let tabsExpanded = loadTabsExpandedPreference();
 let mergeConflicts = loadMergeConflicts();
+let leftPaneCollapsed = loadLeftPaneCollapsedPreference();
 
 if (window.padAPI?.onFileOpened) {
   window.padAPI.onFileOpened(handleExternalFileOpen);
@@ -44,8 +64,11 @@ if (window.padAPI?.onRestoreMerge) {
   window.padAPI.onRestoreMerge(handleRestoreMerge);
 }
 
+renderGroups();
+renderCollapsedGroups();
 renderTabs();
 applyTabsLayoutPreference();
+applyLeftPanePreference();
 syncNoteWithActiveTab();
 initializeAutoBackup();
 updateResolveConflictsButton();
@@ -179,22 +202,40 @@ note.addEventListener('input', event => {
 });
 
 document.addEventListener('keydown', event => {
-  if (!isMac || !event.metaKey || event.key.toLowerCase() !== 'w') {
+  if (!isMac || !event.metaKey) {
     return;
   }
 
-  const active = getActiveTab();
-  if (!active) {
+  const key = event.key.toLowerCase();
+
+  // Cmd+W to close tab
+  if (key === 'w') {
+    const active = getActiveTab();
+    if (!active) {
+      return;
+    }
+    event.preventDefault();
+    closeTab(active.id);
     return;
   }
 
-  event.preventDefault();
-  closeTab(active.id);
+  // Cmd+T to create new tab
+  if (key === 't') {
+    event.preventDefault();
+    addTabButton.click();
+  }
 });
 
 addTabButton.addEventListener('click', () => {
   const newTab = createEmptyTab(getNextTabNumber());
   state.tabs.push(newTab);
+
+  // Add tab to active group
+  const activeGroup = getActiveGroup();
+  if (activeGroup) {
+    activeGroup.tabIds.push(newTab.id);
+  }
+
   state.activeTabId = newTab.id;
   persistState();
   queueTabEvent({
@@ -202,6 +243,7 @@ addTabButton.addEventListener('click', () => {
     tab: toEventTab(newTab),
     tabIndex: state.tabs.length - 1,
   });
+  renderGroups();
   renderTabs();
   applyTabsLayoutPreference();
   syncNoteWithActiveTab();
@@ -212,6 +254,24 @@ toggleTabsButton.addEventListener('click', () => {
   tabsExpanded = !tabsExpanded;
   applyTabsLayoutPreference();
   persistTabsExpandedPreference();
+});
+
+paneToggleButton.addEventListener('click', () => {
+  leftPaneCollapsed = !leftPaneCollapsed;
+  applyLeftPanePreference();
+  persistLeftPaneCollapsedPreference();
+});
+
+addGroupButton.addEventListener('click', () => {
+  const newGroup = createEmptyGroup(getNextGroupNumber());
+  state.groups.push(newGroup);
+  state.activeGroupId = newGroup.id;
+  state.activeTabId = null;
+  persistState();
+  renderGroups();
+  renderCollapsedGroups();
+  renderTabs();
+  syncNoteWithActiveTab();
 });
 
 settingsButton.addEventListener('click', openSettingsModal);
@@ -298,7 +358,7 @@ function loadState() {
   const saved = localStorage.getItem(STORAGE_KEY);
   const parsedSaved = parseStoredTabsState(saved);
   if (parsedSaved) {
-    return parsedSaved;
+    return migrateStateWithGroups(parsedSaved);
   }
 
   const legacy = localStorage.getItem(LEGACY_STORAGE_KEY);
@@ -310,18 +370,59 @@ function loadState() {
       content: legacy,
     };
     localStorage.removeItem(LEGACY_STORAGE_KEY);
+    const defaultGroup = createDefaultGroup([firstTab.id]);
     return {
       tabs: [firstTab],
+      groups: [defaultGroup],
+      activeGroupId: defaultGroup.id,
       activeTabId: firstTab.id,
       nextTabNumber: 2,
+      nextGroupNumber: 2,
     };
   }
 
   const initialTab = createEmptyTab(1);
+  const defaultGroup = createDefaultGroup([initialTab.id]);
   return {
     tabs: [initialTab],
+    groups: [defaultGroup],
+    activeGroupId: defaultGroup.id,
     activeTabId: initialTab.id,
     nextTabNumber: 2,
+    nextGroupNumber: 2,
+  };
+}
+
+function createDefaultGroup(tabIds) {
+  return {
+    id: generateGroupId(),
+    name: 'Group 1',
+    tabIds: tabIds,
+  };
+}
+
+function generateGroupId() {
+  return `group-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+}
+
+function migrateStateWithGroups(parsedState) {
+  if (Array.isArray(parsedState.groups) && parsedState.groups.length > 0) {
+    // Already has groups
+    return {
+      ...parsedState,
+      activeGroupId: parsedState.activeGroupId || parsedState.groups[0].id,
+      nextGroupNumber: parsedState.nextGroupNumber || parsedState.groups.length + 1,
+    };
+  }
+
+  // Migrate: put all existing tabs into a default group
+  const allTabIds = parsedState.tabs.map(tab => tab.id);
+  const defaultGroup = createDefaultGroup(allTabIds);
+  return {
+    ...parsedState,
+    groups: [defaultGroup],
+    activeGroupId: defaultGroup.id,
+    nextGroupNumber: 2,
   };
 }
 
@@ -366,10 +467,18 @@ function parseStoredTabsState(raw) {
       typeof parsed.activeTabId === 'string' &&
       sanitizedTabs.some(tab => tab.id === parsed.activeTabId);
 
+    // Preserve groups if they exist
+    const groups = Array.isArray(parsed.groups) ? parsed.groups : [];
+    const activeGroupId = typeof parsed.activeGroupId === 'string' ? parsed.activeGroupId : null;
+    const nextGroupNumber = typeof parsed.nextGroupNumber === 'number' ? parsed.nextGroupNumber : null;
+
     return {
       tabs: sanitizedTabs,
       activeTabId: hasValidActive ? parsed.activeTabId : sanitizedTabs[0].id,
       nextTabNumber: sanitizeNextTabNumber(parsed.nextTabNumber, sanitizedTabs),
+      groups,
+      activeGroupId,
+      nextGroupNumber,
     };
   } catch (error) {
     console.warn('Failed to parse stored tabs.', error);
@@ -381,13 +490,31 @@ function loadTabsExpandedPreference() {
   return localStorage.getItem(TAB_LAYOUT_STORAGE_KEY) === 'true';
 }
 
+function loadLeftPaneCollapsedPreference() {
+  return localStorage.getItem(LEFT_PANE_COLLAPSED_KEY) === 'true';
+}
+
+function persistLeftPaneCollapsedPreference() {
+  localStorage.setItem(LEFT_PANE_COLLAPSED_KEY, leftPaneCollapsed ? 'true' : 'false');
+}
+
+function applyLeftPanePreference() {
+  leftPane.classList.toggle('collapsed', leftPaneCollapsed);
+  const label = leftPaneCollapsed ? 'Expand sidebar' : 'Collapse sidebar';
+  paneToggleButton.setAttribute('aria-label', label);
+  paneToggleButton.setAttribute('title', label);
+}
+
 function persistState() {
   localStorage.setItem(
     STORAGE_KEY,
     JSON.stringify({
       tabs: state.tabs,
+      groups: state.groups,
+      activeGroupId: state.activeGroupId,
       activeTabId: state.activeTabId,
       nextTabNumber: state.nextTabNumber,
+      nextGroupNumber: state.nextGroupNumber,
     }),
   );
 }
@@ -396,10 +523,213 @@ function persistTabsExpandedPreference() {
   localStorage.setItem(TAB_LAYOUT_STORAGE_KEY, tabsExpanded ? 'true' : 'false');
 }
 
+function getGroupIcon(group) {
+  if (group.icon) {
+    return group.icon;
+  }
+  // Assign random icon and persist it
+  const randomIndex = Math.floor(Math.random() * GROUP_ICONS.length);
+  group.icon = GROUP_ICONS[randomIndex];
+  persistState();
+  return group.icon;
+}
+
+function getTabIcon(tab) {
+  if (tab.icon) {
+    return tab.icon;
+  }
+  // Assign random icon and persist it
+  const randomIndex = Math.floor(Math.random() * TAB_ICONS.length);
+  tab.icon = TAB_ICONS[randomIndex];
+  persistState();
+  return tab.icon;
+}
+
+function renderGroups() {
+  groupsList.textContent = '';
+
+  state.groups.forEach(group => {
+    const item = document.createElement('div');
+    item.className = `group-item${group.id === state.activeGroupId ? ' active' : ''}`;
+    item.dataset.groupId = group.id;
+
+    const iconSpan = document.createElement('span');
+    iconSpan.className = 'group-icon';
+    iconSpan.textContent = getGroupIcon(group);
+
+    const nameSpan = document.createElement('span');
+    nameSpan.className = 'group-name';
+    nameSpan.textContent = group.name;
+
+    const countSpan = document.createElement('span');
+    countSpan.className = 'group-count';
+    countSpan.textContent = group.tabIds.length;
+
+    item.appendChild(iconSpan);
+    item.appendChild(nameSpan);
+    item.appendChild(countSpan);
+
+    item.addEventListener('click', () => {
+      if (state.activeGroupId === group.id) {
+        return;
+      }
+      switchToGroup(group.id);
+    });
+
+    nameSpan.addEventListener('dblclick', event => {
+      event.stopPropagation();
+      startGroupRename(group.id, nameSpan);
+    });
+
+    // Drag and drop support for moving tabs between groups
+    item.addEventListener('dragover', event => {
+      if (!draggingTabId) {
+        return;
+      }
+      event.preventDefault();
+      item.classList.add('drag-over');
+    });
+
+    item.addEventListener('dragleave', () => {
+      item.classList.remove('drag-over');
+    });
+
+    item.addEventListener('drop', event => {
+      item.classList.remove('drag-over');
+      if (!draggingTabId) {
+        return;
+      }
+      event.preventDefault();
+      moveTabToGroup(draggingTabId, group.id);
+    });
+
+    groupsList.appendChild(item);
+  });
+}
+
+function startGroupRename(groupId, nameSpan) {
+  const group = state.groups.find(g => g.id === groupId);
+  if (!group) {
+    return;
+  }
+
+  const input = document.createElement('input');
+  input.type = 'text';
+  input.className = 'group-name-input';
+  input.value = group.name;
+  input.maxLength = GROUP_NAME_MAX_LENGTH;
+
+  nameSpan.replaceWith(input);
+  input.focus();
+  input.select();
+
+  const finishRename = () => {
+    const newName = input.value.trim() || group.name;
+    group.name = newName.slice(0, GROUP_NAME_MAX_LENGTH);
+    persistState();
+    renderGroups();
+  };
+
+  input.addEventListener('blur', finishRename);
+  input.addEventListener('keydown', event => {
+    if (event.key === 'Enter') {
+      event.preventDefault();
+      input.blur();
+    } else if (event.key === 'Escape') {
+      event.preventDefault();
+      input.value = group.name;
+      input.blur();
+    }
+  });
+}
+
+function switchToGroup(groupId) {
+  const group = state.groups.find(g => g.id === groupId);
+  if (!group) {
+    return;
+  }
+
+  state.activeGroupId = groupId;
+
+  // Set active tab to first tab in group, or null if empty
+  if (group.tabIds.length > 0) {
+    const firstTabId = group.tabIds[0];
+    const tabExists = state.tabs.some(t => t.id === firstTabId);
+    state.activeTabId = tabExists ? firstTabId : null;
+  } else {
+    state.activeTabId = null;
+  }
+
+  persistState();
+  renderGroups();
+  renderCollapsedGroups();
+  renderTabs();
+  syncNoteWithActiveTab();
+  note.focus();
+}
+
+function renderCollapsedGroups() {
+  collapsedGroupsContainer.textContent = '';
+
+  state.groups.forEach(group => {
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = `collapsed-group-icon${group.id === state.activeGroupId ? ' active' : ''}`;
+    button.textContent = getGroupIcon(group);
+    button.setAttribute('title', group.name);
+    button.setAttribute('aria-label', group.name);
+
+    button.addEventListener('click', () => {
+      if (state.activeGroupId !== group.id) {
+        switchToGroup(group.id);
+      }
+    });
+
+    // Drag and drop support for moving tabs between groups
+    button.addEventListener('dragover', event => {
+      if (!draggingTabId) {
+        return;
+      }
+      event.preventDefault();
+      button.classList.add('drag-over');
+    });
+
+    button.addEventListener('dragleave', () => {
+      button.classList.remove('drag-over');
+    });
+
+    button.addEventListener('drop', event => {
+      button.classList.remove('drag-over');
+      if (!draggingTabId) {
+        return;
+      }
+      event.preventDefault();
+      moveTabToGroup(draggingTabId, group.id);
+    });
+
+    collapsedGroupsContainer.appendChild(button);
+  });
+}
+
+function getActiveGroup() {
+  return state.groups.find(g => g.id === state.activeGroupId) ?? null;
+}
+
+function getTabsForActiveGroup() {
+  const group = getActiveGroup();
+  if (!group) {
+    return [];
+  }
+  return group.tabIds
+    .map(id => state.tabs.find(t => t.id === id))
+    .filter(Boolean);
+}
+
 function renderTabs() {
   tabsContainer.textContent = '';
 
-  state.tabs.forEach(tab => {
+  const tabsToRender = getTabsForActiveGroup();
+  tabsToRender.forEach(tab => {
     const wrapper = document.createElement('div');
     const conflict = mergeConflicts.byTabId[tab.id];
     const isDeleteConflict =
@@ -418,10 +748,15 @@ function renderTabs() {
       draggingTabId = null;
     });
 
+    const iconSpan = document.createElement('span');
+    iconSpan.className = 'tab-icon';
+    iconSpan.textContent = getTabIcon(tab);
+
     const button = document.createElement('button');
     button.type = 'button';
     button.className = 'tab-button';
-    button.textContent = tab.title;
+    button.appendChild(iconSpan);
+    button.appendChild(document.createTextNode(tab.title));
     button.setAttribute('aria-pressed', tab.id === state.activeTabId ? 'true' : 'false');
     button.addEventListener('click', () => {
       if (state.activeTabId === tab.id) {
@@ -1099,19 +1434,100 @@ function closeTab(tabId) {
   });
   state.tabs.splice(tabIndex, 1);
 
-  if (state.tabs.length === 0) {
+  // Remove tab from its group
+  for (const group of state.groups) {
+    const idx = group.tabIds.indexOf(tabId);
+    if (idx !== -1) {
+      group.tabIds.splice(idx, 1);
+      break;
+    }
+  }
+
+  // Handle active tab selection within current group
+  const activeGroup = getActiveGroup();
+  const groupTabIds = activeGroup ? activeGroup.tabIds : [];
+
+  if (groupTabIds.length === 0) {
+    // No tabs left in group - create a new one
     const newTab = createEmptyTab(getNextTabNumber());
     state.tabs.push(newTab);
+    if (activeGroup) {
+      activeGroup.tabIds.push(newTab.id);
+    }
     state.activeTabId = newTab.id;
   } else if (state.activeTabId === tabId) {
-    const nextIndex = tabIndex >= state.tabs.length ? state.tabs.length - 1 : tabIndex;
-    state.activeTabId = state.tabs[nextIndex].id;
+    // Select next tab in group
+    const groupTabs = getTabsForActiveGroup();
+    state.activeTabId = groupTabs[0]?.id ?? null;
   }
 
   persistState();
+  renderGroups();
+  renderCollapsedGroups();
   renderTabs();
   syncNoteWithActiveTab();
   note.focus();
+}
+
+function moveTabToGroup(tabId, targetGroupId) {
+  // Find the tab
+  const tab = state.tabs.find(t => t.id === tabId);
+  if (!tab) {
+    return;
+  }
+
+  // Find source group and remove the tab from it
+  let sourceGroup = null;
+  for (const group of state.groups) {
+    const idx = group.tabIds.indexOf(tabId);
+    if (idx !== -1) {
+      sourceGroup = group;
+      group.tabIds.splice(idx, 1);
+      break;
+    }
+  }
+
+  // Find target group and add the tab to it
+  const targetGroup = state.groups.find(g => g.id === targetGroupId);
+  if (!targetGroup) {
+    // Restore to source if target not found
+    if (sourceGroup) {
+      sourceGroup.tabIds.push(tabId);
+    }
+    return;
+  }
+
+  // Don't move if already in target group
+  if (sourceGroup && sourceGroup.id === targetGroupId) {
+    sourceGroup.tabIds.push(tabId);
+    return;
+  }
+
+  targetGroup.tabIds.push(tabId);
+
+  // If source group is now empty and it was the active group, create a new tab
+  if (sourceGroup && sourceGroup.id === state.activeGroupId && sourceGroup.tabIds.length === 0) {
+    const newTab = createEmptyTab(getNextTabNumber());
+    state.tabs.push(newTab);
+    sourceGroup.tabIds.push(newTab.id);
+    state.activeTabId = newTab.id;
+  } else if (state.activeTabId === tabId) {
+    // If the moved tab was active, select another tab in the source group or switch to target
+    const activeGroup = getActiveGroup();
+    if (activeGroup && activeGroup.tabIds.length > 0) {
+      state.activeTabId = activeGroup.tabIds[0];
+    } else {
+      // Switch to target group and select the moved tab
+      state.activeGroupId = targetGroupId;
+      state.activeTabId = tabId;
+    }
+  }
+
+  persistState();
+  renderGroups();
+  renderCollapsedGroups();
+  renderTabs();
+  syncNoteWithActiveTab();
 }
 
 function createEmptyTab(position) {
@@ -1122,6 +1538,23 @@ function createEmptyTab(position) {
     fallbackTitle,
     content: '',
   };
+}
+
+function createEmptyGroup(position) {
+  return {
+    id: generateGroupId(),
+    name: `Group ${position}`,
+    tabIds: [],
+  };
+}
+
+function getNextGroupNumber() {
+  if (!Number.isFinite(state.nextGroupNumber) || state.nextGroupNumber < 1) {
+    state.nextGroupNumber = state.groups.length + 1;
+  }
+  const next = state.nextGroupNumber;
+  state.nextGroupNumber += 1;
+  return next;
 }
 
 function getNextTabNumber() {

@@ -4,19 +4,17 @@
   "description": "Minimal Electron note pad with a single text area.",
   "main": "main.js",
   "scripts": {
-    "start": "electron .",
-    "dev": "electron . --user-data-dir=.electron-dev-data --machine-name=dev",
-    "dev:debug": "cross-env PAD_DEBUG_AUTOSYNC=1 electron . --user-data-dir=.electron-dev-data --machine-name=dev",
-    "devalt": "electron . --user-data-dir=.electron-devalt-data --machine-name=devalt",
-    "devalt:debug": "cross-env PAD_DEBUG_AUTOSYNC=1 electron . --user-data-dir=.electron-devalt-data --machine-name=devalt",
-    "devtri": "electron . --user-data-dir=.electron-devtri-data --machine-name=devtri",
-    "devtri:debug": "cross-env PAD_DEBUG_AUTOSYNC=1 electron . --user-data-dir=.electron-devtri-data --machine-name=devtri",
+    "start": "electron . --machine-name=dev",
+    "dev": "electronmon . --user-data-dir=.electron-dev-data --machine-name=dev --devtools",
+    "devalt": "electronmon . --user-data-dir=.electron-devalt-data --machine-name=devalt",
+    "devtri": "electronmon . --user-data-dir=.electron-devtri-data --machine-name=devtri",
     "package:mac": "electron-packager . Pad --platform=darwin --arch=universal --out=dist --overwrite",
     "package:win11": "electron-packager . Pad --platform=win32 --arch=x64 --out=dist --overwrite"
   },
   "devDependencies": {
     "@electron/packager": "^19.0.1",
     "cross-env": "^7.0.3",
-    "electron": "^31.0.0"
+    "electron": "^31.0.0",
+    "electronmon": "^2.0.3"
   }
 }

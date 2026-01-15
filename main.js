@@ -6,6 +6,7 @@ const { createBackupManager } = require('./backup');
 const { createEventLogManager } = require('./events');
 
 const isMac = process.platform === 'darwin';
+const openDevTools = process.argv.includes('--devtools');
 
 let mainWindow = null;
 const backupManager = createBackupManager({ app });
@@ -150,6 +151,9 @@ function createMainWindow() {
 
   window.once('ready-to-show', () => {
     window.show();
+    if (openDevTools) {
+      window.webContents.openDevTools();
+    }
   });
 
   window.loadFile('index.html');

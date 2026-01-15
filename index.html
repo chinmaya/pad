@@ -87,6 +87,177 @@
         background: transparent;
       }
 
+      .main-container {
+        display: flex;
+        flex: 1;
+        min-height: 0;
+      }
+
+      .left-pane {
+        display: flex;
+        flex-direction: column;
+        width: 200px;
+        border-right: 1px solid color-mix(in srgb, currentColor 15%, transparent);
+        background: color-mix(in srgb, currentColor 4%, transparent);
+        transition: width 0.2s ease;
+        overflow: hidden;
+      }
+
+      .left-pane.collapsed {
+        width: 40px;
+      }
+
+      .pane-toggle {
+        flex: none;
+        width: 40px;
+        height: 40px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        border: none;
+        background: transparent;
+        color: inherit;
+        cursor: pointer;
+      }
+
+      .pane-toggle:hover {
+        background: color-mix(in srgb, currentColor 8%, transparent);
+      }
+
+      .collapsed-nav {
+        display: none;
+        flex-direction: column;
+        align-items: center;
+        gap: 0.25rem;
+        padding: 0.5rem 0;
+        flex: 1;
+        overflow-y: auto;
+      }
+
+      .left-pane.collapsed .collapsed-nav {
+        display: flex;
+      }
+
+      .collapsed-group-icon {
+        width: 32px;
+        height: 32px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        border: none;
+        background: transparent;
+        color: inherit;
+        cursor: pointer;
+        border-radius: 0.4rem;
+        font-size: 1.1rem;
+        opacity: 0.6;
+      }
+
+      .collapsed-group-icon:hover {
+        opacity: 1;
+        background: color-mix(in srgb, currentColor 10%, transparent);
+      }
+
+      .collapsed-group-icon.active {
+        opacity: 1;
+        background: color-mix(in srgb, currentColor 15%, transparent);
+      }
+
+      .collapsed-group-icon.drag-over {
+        opacity: 1;
+        background: color-mix(in srgb, currentColor 25%, transparent);
+        outline: 2px dashed color-mix(in srgb, currentColor 40%, transparent);
+        outline-offset: -2px;
+      }
+
+      .pane-content {
+        flex: 1;
+        padding: 0.5rem;
+        overflow: auto;
+      }
+
+      .left-pane.collapsed .pane-content {
+        display: none;
+      }
+
+      .groups-list {
+        display: flex;
+        flex-direction: column;
+        gap: 0.25rem;
+      }
+
+      .group-item {
+        display: flex;
+        align-items: center;
+        padding: 0.5rem 0.75rem;
+        border-radius: 0.4rem;
+        cursor: pointer;
+        user-select: none;
+        gap: 0.5rem;
+      }
+
+      .group-item:hover {
+        background: color-mix(in srgb, currentColor 8%, transparent);
+      }
+
+      .group-item.active {
+        background: color-mix(in srgb, currentColor 15%, transparent);
+      }
+
+      .group-item.drag-over {
+        background: color-mix(in srgb, currentColor 25%, transparent);
+        outline: 2px dashed color-mix(in srgb, currentColor 40%, transparent);
+        outline-offset: -2px;
+      }
+
+      .group-icon {
+        flex: none;
+        font-size: 1rem;
+      }
+
+      .group-name {
+        flex: 1;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        font-size: 0.9rem;
+      }
+
+      .group-name-input {
+        flex: 1;
+        font-size: 0.9rem;
+        padding: 0.1rem 0.25rem;
+        border: 1px solid color-mix(in srgb, currentColor 30%, transparent);
+        border-radius: 0.25rem;
+        background: transparent;
+        color: inherit;
+        outline: none;
+        min-width: 0;
+      }
+
+      .group-count {
+        font-size: 0.75rem;
+        opacity: 0.6;
+      }
+
+      .add-group {
+        margin-top: 0.5rem;
+        width: 100%;
+        padding: 0.5rem;
+        border: 1px dashed color-mix(in srgb, currentColor 25%, transparent);
+        border-radius: 0.4rem;
+        background: transparent;
+        color: inherit;
+        cursor: pointer;
+        font-size: 1rem;
+        opacity: 0.6;
+      }
+
+      .add-group:hover {
+        opacity: 1;
+        background: color-mix(in srgb, currentColor 5%, transparent);
+      }
+
       .tab-bar {
         display: flex;
         align-items: flex-start;
@@ -176,6 +347,7 @@
       .tab-button {
         display: inline-flex;
         align-items: center;
+        gap: 0.3rem;
         padding-right: 0.35rem;
         flex: 1 1 auto;
         min-width: 0;
@@ -183,6 +355,11 @@
         text-overflow: ellipsis;
         white-space: nowrap;
         height: 100%;
+      }
+
+      .tab-icon {
+        flex: none;
+        font-size: 0.85rem;
       }
 
       .tab-close {
@@ -447,7 +624,22 @@
         +
       </button>
     </div>
-    <textarea id="note" autofocus placeholder="Start typing..." spellcheck="false"></textarea>
+    <div class="main-container">
+      <aside id="left-pane" class="left-pane">
+        <button id="pane-toggle" class="pane-toggle" type="button" aria-label="Toggle sidebar" title="Toggle sidebar">
+          <svg width="18" height="18" viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="1.5">
+            <rect x="1" y="2" width="16" height="14" rx="2" />
+            <line x1="6" y1="2" x2="6" y2="16" />
+          </svg>
+        </button>
+        <div id="collapsed-groups" class="collapsed-nav"></div>
+        <div class="pane-content">
+          <div id="groups-list" class="groups-list"></div>
+          <button id="add-group" class="add-group" type="button" aria-label="New group" title="New group">+</button>
+        </div>
+      </aside>
+      <textarea id="note" autofocus placeholder="Start typing..." spellcheck="false"></textarea>
+    </div>
     <div id="settings-modal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="settings-title">
       <div class="modal-content">
         <header class="modal-header">
