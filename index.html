@@ -22,6 +22,60 @@
         color: #0f172a;
       }
 
+      @media (prefers-color-scheme: dark) {
+        body {
+          background: #1e1e1e;
+          color: #e4e4e4;
+        }
+        .modal-content {
+          background: #2d2d2d;
+          color: #e4e4e4;
+          border-color: rgba(255, 255, 255, 0.1);
+        }
+        .modal-header {
+          border-color: rgba(255, 255, 255, 0.1);
+        }
+        .modal-subtitle,
+        .modal-hint {
+          color: #a0a0a0;
+        }
+        .settings-editor,
+        .merge-textarea {
+          background: #1e1e1e;
+          color: #e4e4e4;
+          border-color: rgba(255, 255, 255, 0.15);
+        }
+        .settings-suggestions button {
+          background: #3d3d3d;
+          color: #e4e4e4;
+          border-color: rgba(255, 255, 255, 0.15);
+        }
+        .settings-suggestions button:hover {
+          background: #4d4d4d;
+        }
+        .modal-actions button {
+          background: #e4e4e4;
+          color: #1e1e1e;
+        }
+        .modal-actions button.secondary {
+          background: #3d3d3d;
+          color: #e4e4e4;
+        }
+        .icon-button {
+          background: rgba(255, 255, 255, 0.1);
+        }
+        .icon-button:hover {
+          background: rgba(255, 255, 255, 0.15);
+        }
+        .merge-pane {
+          background: rgba(255, 255, 255, 0.05);
+          border-color: rgba(255, 255, 255, 0.12);
+        }
+        .settings-error {
+          color: #f87171;
+        }
+      }
+
       textarea {
         flex: 1;
         padding: 1rem;
