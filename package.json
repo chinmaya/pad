@@ -14,7 +14,7 @@
   "devDependencies": {
     "@electron/packager": "^19.0.1",
     "cross-env": "^7.0.3",
-    "electron": "^31.0.0",
+    "electron": "^39.2.7",
     "electronmon": "^2.0.3"
   }
 }
