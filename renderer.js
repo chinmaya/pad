@@ -23,6 +23,13 @@ const mergeUseBackupButton = document.getElementById('merge-use-backup');
 const mergeKeepBothButton = document.getElementById('merge-keep-both');
 const mergeDeleteTabButton = document.getElementById('merge-delete-tab');
 const mergeUseManualButton = document.getElementById('merge-use-manual');
+const mergePrevButton = document.getElementById('merge-prev');
+const mergeNextButton = document.getElementById('merge-next');
+const mergeProgress = document.getElementById('merge-progress');
+const mergeCurrentMachine = document.getElementById('merge-current-machine');
+const mergeBackupMachine = document.getElementById('merge-backup-machine');
+const mergeEditSection = document.getElementById('merge-edit-section');
+const mergeEditHeader = document.getElementById('merge-edit-header');
 const leftPane = document.getElementById('left-pane');
 const paneToggleButton = document.getElementById('pane-toggle');
 const groupsList = document.getElementById('groups-list');
@@ -55,6 +62,18 @@ let draggingTabId = null;
 let tabsExpanded = loadTabsExpandedPreference();
 let mergeConflicts = loadMergeConflicts();
 let leftPaneCollapsed = loadLeftPaneCollapsedPreference();
+let currentMachineName = 'unknown';
+
+// Initialize machine name
+(async function initMachineName() {
+  if (window.padAPI?.getMachineName) {
+    try {
+      currentMachineName = await window.padAPI.getMachineName();
+    } catch (err) {
+      console.warn('Failed to get machine name', err);
+    }
+  }
+})();
 
 if (window.padAPI?.onFileOpened) {
   window.padAPI.onFileOpened(handleExternalFileOpen);
@@ -72,6 +91,7 @@ applyLeftPanePreference();
 syncNoteWithActiveTab();
 initializeAutoBackup();
 updateResolveConflictsButton();
+initializeSyncWorker();
 
 function getTabIndexById(tabId) {
   return state.tabs.findIndex(tab => tab.id === tabId);
@@ -193,6 +213,8 @@ note.addEventListener('input', event => {
   }
 
   active.content = event.target.value;
+  active.updatedAt = new Date().toISOString();
+  active.updatedBy = currentMachineName;
   const titleChanged = updateTabTitleFromContent(active);
   persistState();
   scheduleTabUpdateEvent(active.id);
@@ -329,6 +351,33 @@ mergeKeepBothButton.addEventListener('click', () => resolveMergeConflict('keep_b
 mergeDeleteTabButton.addEventListener('click', () => resolveMergeConflict('delete_tab'));
 mergeUseManualButton.addEventListener('click', () => resolveMergeConflict('use_manual'));
 
+// Navigation buttons
+mergePrevButton.addEventListener('click', () => navigateConflict(-1));
+mergeNextButton.addEventListener('click', () => navigateConflict(1));
+
+// Toggle manual edit section
+mergeEditHeader.addEventListener('click', () => {
+  const isCollapsed = mergeEditSection.classList.toggle('collapsed');
+  mergeEditHeader.querySelector('.edit-toggle').textContent = isCollapsed ? 'Click to expand' : 'Click to collapse';
+  if (!isCollapsed) {
+    mergeManualTextarea.focus();
+  }
+});
+
+// Keyboard navigation for merge modal
+document.addEventListener('keydown', event => {
+  if (mergeModal.classList.contains('hidden')) return;
+  if (event.target === mergeManualTextarea) return; // Don't navigate when typing
+
+  if (event.key === 'ArrowLeft') {
+    event.preventDefault();
+    navigateConflict(-1);
+  } else if (event.key === 'ArrowRight') {
+    event.preventDefault();
+    navigateConflict(1);
+  }
+});
+
 tabsContainer.addEventListener('dragover', event => {
   if (!draggingTabId) {
     return;
@@ -451,6 +500,11 @@ function parseStoredTabsState(raw) {
           title: typeof tab.title === 'string' && tab.title.trim() ? tab.title : fallbackTitle,
           content: typeof tab.content === 'string' ? tab.content : '',
         };
+
+        // Preserve icon if it exists
+        if (typeof tab.icon === 'string' && tab.icon) {
+          sanitizedTab.icon = tab.icon;
+        }
 
         if (sanitizedTab.content.trim()) {
           updateTabTitleFromContent(sanitizedTab);
@@ -722,7 +776,11 @@ function getTabsForActiveGroup() {
   }
   return group.tabIds
     .map(id => state.tabs.find(t => t.id === id))
-    .filter(Boolean);
+    .filter(tab => tab && !tab.deleted); // Filter out tombstones
+}
+
+function getLiveTabs() {
+  return state.tabs.filter(tab => !tab.deleted);
 }
 
 function renderTabs() {
@@ -747,6 +805,12 @@ function renderTabs() {
       wrapper.classList.remove('dragging');
       draggingTabId = null;
     });
+
+    // Add tooltip for conflict details
+    if (conflict) {
+      const tooltipText = buildConflictTooltip(conflict);
+      wrapper.setAttribute('title', tooltipText);
+    }
 
     const iconSpan = document.createElement('span');
     iconSpan.className = 'tab-icon';
@@ -786,6 +850,29 @@ function renderTabs() {
   });
 }
 
+function buildConflictTooltip(conflict) {
+  const parts = ['Merge conflict'];
+
+  if (conflict.reason === 'deleted_in_backup') {
+    parts[0] = 'Tab deleted in backup';
+  } else if (conflict.reason === 'deleted_in_current') {
+    parts[0] = 'Tab deleted locally';
+  } else if (conflict.reason === 'too_large') {
+    parts[0] = 'Content too large to auto-merge';
+  }
+
+  const machines = conflict.machines ?? [];
+  if (machines.length > 1) {
+    parts.push(`Between: ${machines.join(', ')}`);
+  } else if (machines.length === 1) {
+    parts.push(`From: ${machines[0]}`);
+  }
+
+  parts.push('Click "!" button to resolve');
+
+  return parts.join('\n');
+}
+
 function loadMergeConflicts() {
   const raw = localStorage.getItem(MERGE_CONFLICTS_KEY);
   if (!raw) {
@@ -816,18 +903,39 @@ function persistMergeConflicts() {
 }
 
 function updateResolveConflictsButton() {
-  const count = Object.keys(mergeConflicts.byTabId).length;
+  const conflictIds = Object.keys(mergeConflicts.byTabId);
+  const count = conflictIds.length;
+
   if (count === 0) {
     resolveConflictsButton.classList.add('hidden');
-    resolveConflictsButton.textContent = '!';
+    resolveConflictsButton.innerHTML = '<span class="resolve-conflicts-icon">!</span>';
     resolveConflictsButton.setAttribute('title', 'Resolve merge conflicts');
     resolveConflictsButton.setAttribute('aria-label', 'Resolve merge conflicts');
     return;
   }
 
   resolveConflictsButton.classList.remove('hidden');
-  resolveConflictsButton.textContent = `!${count}`;
-  resolveConflictsButton.setAttribute('title', `Resolve ${count} merge conflict${count === 1 ? '' : 's'}`);
+  resolveConflictsButton.innerHTML = `<span class="resolve-conflicts-icon">⚠<span class="conflict-badge">${count}</span></span>`;
+
+  // Build detailed tooltip
+  const tooltipParts = [`${count} merge conflict${count === 1 ? '' : 's'}`];
+  const tabNames = conflictIds
+    .slice(0, 5) // Show up to 5 tab names
+    .map(id => {
+      const tab = state.tabs.find(t => t.id === id);
+      return tab ? `• ${tab.title}` : null;
+    })
+    .filter(Boolean);
+
+  if (tabNames.length > 0) {
+    tooltipParts.push('', ...tabNames);
+  }
+  if (count > 5) {
+    tooltipParts.push(`• ...and ${count - 5} more`);
+  }
+  tooltipParts.push('', 'Click to resolve');
+
+  resolveConflictsButton.setAttribute('title', tooltipParts.join('\n'));
   resolveConflictsButton.setAttribute('aria-label', `Resolve ${count} merge conflicts`);
 }
 
@@ -849,13 +957,16 @@ function openMergeModal(tabId) {
   mergeTabSelect.value = tabId;
   renderMergeConflictForTab(tabId);
 
-  mergeManualTextarea.classList.add('hidden');
+  // Reset edit section to collapsed state
+  mergeEditSection.classList.add('collapsed');
+  mergeEditHeader.querySelector('.edit-toggle').textContent = 'Click to expand';
   mergeModal.classList.remove('hidden');
 }
 
 function closeMergeModal() {
   mergeModal.classList.add('hidden');
-  mergeManualTextarea.classList.add('hidden');
+  mergeEditSection.classList.add('collapsed');
+  mergeEditHeader.querySelector('.edit-toggle').textContent = 'Click to expand';
 }
 
 function renderMergeConflictForTab(tabId) {
@@ -869,21 +980,29 @@ function renderMergeConflictForTab(tabId) {
 
   const tab = state.tabs.find(t => t.id === tabId);
   const title = tab ? tab.title : tabId;
-  const count = Object.keys(mergeConflicts.byTabId).length;
+  const conflictIds = Object.keys(mergeConflicts.byTabId);
+  const count = conflictIds.length;
+  const currentIndex = conflictIds.indexOf(tabId);
+
+  // Update navigation
+  updateMergeNavigation(currentIndex, count);
+
+  // Build subtitle with machine info if available
+  const machines = conflict.machines ?? [];
+  const machineText = machines.length > 1 ? ` • between ${machines.join(' and ')}` : '';
   const currentRangeText =
     conflict.currentRange && typeof conflict.currentRange.startLine === 'number'
-      ? `current ${conflict.currentRange.startLine}-${conflict.currentRange.endLine}`
+      ? `lines ${conflict.currentRange.startLine}-${conflict.currentRange.endLine}`
       : '';
-  const backupRangeText =
-    conflict.backupRange && typeof conflict.backupRange.startLine === 'number'
-      ? `backup ${conflict.backupRange.startLine}-${conflict.backupRange.endLine}`
-      : '';
-  const rangeText =
-    currentRangeText || backupRangeText
-      ? ` • showing ${[currentRangeText, backupRangeText].filter(Boolean).join(', ')}`
-      : '';
+  const rangeText = currentRangeText ? ` • ${currentRangeText}` : '';
 
-  mergeSubtitle.textContent = `${count} conflict${count === 1 ? '' : 's'} pending • ${title}${rangeText}`;
+  mergeSubtitle.textContent = `${title}${machineText}${rangeText}`;
+
+  // Update machine name headers
+  const currentMachineName = machines[0] || 'This device';
+  const backupMachineName = machines[1] || 'Other version';
+  mergeCurrentMachine.textContent = currentMachineName ? ` (${currentMachineName})` : '';
+  mergeBackupMachine.textContent = backupMachineName ? ` (${backupMachineName})` : '';
 
   const currentText = conflict.currentExcerpt ?? conflict.currentText ?? '';
   const backupText = conflict.backupExcerpt ?? conflict.backupText ?? '';
@@ -892,10 +1011,31 @@ function renderMergeConflictForTab(tabId) {
     ? window.padMerge.diffLinesByLcs(currentText, backupText, { maxCells: 50_000 })
     : null;
 
-  renderDiffPane(mergeCurrentPane, currentText, diff?.aChanged ?? null);
-  renderDiffPane(mergeBackupPane, backupText, diff?.bChanged ?? null);
-  if (!mergeManualTextarea.classList.contains('hidden')) {
-    mergeManualTextarea.value = conflict.suggestedText ?? '';
+  renderDiffPane(mergeCurrentPane, currentText, diff?.aChanged ?? null, { side: 'current', otherText: backupText });
+  renderDiffPane(mergeBackupPane, backupText, diff?.bChanged ?? null, { side: 'backup', otherText: currentText });
+
+  // Pre-populate manual edit textarea with suggested merge
+  mergeManualTextarea.value = conflict.suggestedText ?? '';
+}
+
+function updateMergeNavigation(currentIndex, total) {
+  mergeProgress.textContent = `${currentIndex + 1}/${total}`;
+  mergePrevButton.disabled = currentIndex <= 0;
+  mergeNextButton.disabled = currentIndex >= total - 1;
+}
+
+function navigateConflict(direction) {
+  const conflictIds = Object.keys(mergeConflicts.byTabId);
+  const currentTabId = mergeTabSelect.value;
+  const currentIndex = conflictIds.indexOf(currentTabId);
+
+  let newIndex = currentIndex + direction;
+  if (newIndex < 0) newIndex = 0;
+  if (newIndex >= conflictIds.length) newIndex = conflictIds.length - 1;
+
+  if (newIndex !== currentIndex && conflictIds[newIndex]) {
+    mergeTabSelect.value = conflictIds[newIndex];
+    renderMergeConflictForTab(conflictIds[newIndex]);
   }
 }
 
@@ -1021,17 +1161,94 @@ function escapeHtml(input) {
     .replace(/'/g, '&#39;');
 }
 
-function renderDiffPane(target, rawText, changedMask) {
+function renderDiffPane(target, rawText, changedMask, options = {}) {
+  const { side = 'current', otherText = '' } = options;
   const lines = String(rawText ?? '').split(/\r?\n/);
+  const otherLines = String(otherText ?? '').split(/\r?\n/);
+
   const html = lines
     .map((line, index) => {
       const changed = Array.isArray(changedMask) ? !!changedMask[index] : false;
-      const safe = escapeHtml(line.length ? line : ' ');
-      const className = changed ? 'diff-line changed' : 'diff-line';
-      return `<div class="${className}">${safe}</div>`;
+      const lineNum = index + 1;
+
+      // Determine marker type based on comparison
+      let markerClass = '';
+      let markerSymbol = ' ';
+      let lineClass = 'diff-line';
+
+      if (changed) {
+        // Check if this line exists in other side
+        const otherLine = otherLines[index];
+        if (side === 'current') {
+          // In current pane: if line differs, it's either modified or added
+          if (index >= otherLines.length || otherLine === undefined) {
+            markerClass = 'add';
+            markerSymbol = '+';
+            lineClass = 'diff-line added';
+          } else {
+            markerClass = 'add';
+            markerSymbol = '~';
+            lineClass = 'diff-line changed';
+          }
+        } else {
+          // In backup pane: if line differs, it's either modified or was removed
+          if (index >= lines.length) {
+            markerClass = 'remove';
+            markerSymbol = '-';
+            lineClass = 'diff-line removed';
+          } else {
+            markerClass = 'remove';
+            markerSymbol = '~';
+            lineClass = 'diff-line changed';
+          }
+        }
+      }
+
+      // Render line content with character-level diff for changed lines
+      let safeContent = escapeHtml(line.length ? line : ' ');
+      if (changed && otherLines[index] !== undefined && line !== otherLines[index]) {
+        safeContent = renderCharDiff(line, otherLines[index], side);
+      }
+
+      const lineNumHtml = `<span class="diff-line-number">${lineNum}</span>`;
+      const markerHtml = `<span class="diff-marker ${markerClass}">${markerSymbol}</span>`;
+
+      return `<div class="${lineClass}">${lineNumHtml}${markerHtml}${safeContent}</div>`;
     })
     .join('');
   target.innerHTML = html;
+}
+
+function renderCharDiff(currentLine, otherLine, side) {
+  // Simple character-level diff highlighting
+  // Find common prefix and suffix, highlight the differing middle part
+  const line = currentLine || '';
+  const other = otherLine || '';
+
+  let prefixLen = 0;
+  const minLen = Math.min(line.length, other.length);
+  while (prefixLen < minLen && line[prefixLen] === other[prefixLen]) {
+    prefixLen++;
+  }
+
+  let suffixLen = 0;
+  while (
+    suffixLen < minLen - prefixLen &&
+    line[line.length - 1 - suffixLen] === other[other.length - 1 - suffixLen]
+  ) {
+    suffixLen++;
+  }
+
+  const prefix = escapeHtml(line.slice(0, prefixLen));
+  const middle = escapeHtml(line.slice(prefixLen, line.length - suffixLen) || '');
+  const suffix = escapeHtml(line.slice(line.length - suffixLen) || '');
+
+  if (middle) {
+    const highlightClass = side === 'current' ? 'diff-char-added' : 'diff-char-removed';
+    return `${prefix}<span class="${highlightClass}">${middle}</span>${suffix}`;
+  }
+
+  return escapeHtml(line.length ? line : ' ');
 }
 
 function resolveMergeConflict(mode) {
@@ -1084,7 +1301,14 @@ function resolveMergeConflict(mode) {
       tab.content = currentText || backupText;
     }
   } else if (mode === 'use_manual') {
-    mergeManualTextarea.classList.remove('hidden');
+    // Expand edit section if collapsed
+    if (mergeEditSection.classList.contains('collapsed')) {
+      mergeEditSection.classList.remove('collapsed');
+      mergeEditHeader.querySelector('.edit-toggle').textContent = 'Click to collapse';
+      mergeManualTextarea.focus();
+      return;
+    }
+    // Use the manual edit content
     if (!mergeManualTextarea.value.trim()) {
       mergeManualTextarea.value = conflict.suggestedText ?? '';
       mergeManualTextarea.focus();
@@ -1396,7 +1620,7 @@ function syncNoteWithActiveTab() {
 }
 
 function getActiveTab() {
-  return state.tabs.find(tab => tab.id === state.activeTabId) ?? null;
+  return state.tabs.find(tab => tab.id === state.activeTabId && !tab.deleted) ?? null;
 }
 
 function ensureActiveTabExists() {
@@ -1412,13 +1636,13 @@ function ensureActiveTabExists() {
 }
 
 function closeTab(tabId) {
-  const tabIndex = state.tabs.findIndex(tab => tab.id === tabId);
+  const tabIndex = state.tabs.findIndex(tab => tab.id === tabId && !tab.deleted);
   if (tabIndex === -1) {
     return;
   }
 
   const tab = state.tabs[tabIndex];
-  const hasContent = tab.content.trim().length > 0;
+  const hasContent = tab.content && tab.content.trim().length > 0;
   if (hasContent) {
     const confirmed = window.confirm('This tab has content. Are you sure you want to close it?');
     if (!confirmed) {
@@ -1432,7 +1656,12 @@ function closeTab(tabId) {
     tabId,
     tabIndex,
   });
-  state.tabs.splice(tabIndex, 1);
+
+  // Convert tab to tombstone instead of removing it
+  const tombstone = window.padSyncMerge?.createTombstone
+    ? window.padSyncMerge.createTombstone(tabId, currentMachineName)
+    : { id: tabId, deleted: true, deletedAt: new Date().toISOString(), deletedBy: currentMachineName };
+  state.tabs.splice(tabIndex, 1, tombstone);
 
   // Remove tab from its group
   for (const group of state.groups) {
@@ -1532,11 +1761,14 @@ function moveTabToGroup(tabId, targetGroupId) {
 
 function createEmptyTab(position) {
   const fallbackTitle = `Tab ${position}`;
+  const now = new Date().toISOString();
   return {
     id: generateId(),
     title: fallbackTitle,
     fallbackTitle,
     content: '',
+    updatedAt: now,
+    updatedBy: currentMachineName,
   };
 }
 
@@ -1800,4 +2032,250 @@ function initializeAutoBackup() {
   if (window.padAPI?.updateAutoBackup) {
     window.padAPI.updateAutoBackup();
   }
+}
+
+function initializeSyncWorker() {
+  if (!window.padSync?.startWorker) {
+    return;
+  }
+
+  window.padSync.startWorker({
+    intervalMs: 10_000,
+    getSettings: () => padAppSettings.getBackupSettings(),
+    getSnapshot: () => ({
+      tabs: state.tabs,
+      activeTabId: state.activeTabId,
+      nextTabNumber: state.nextTabNumber,
+      tabsExpanded,
+      groups: state.groups,
+      activeGroupId: state.activeGroupId,
+      nextGroupNumber: state.nextGroupNumber,
+    }),
+    getMachineName: () => currentMachineName,
+    onMergeComplete: handleMergeResult,
+    onSyncComplete: handleSyncComplete,
+  });
+}
+
+function handleSyncComplete(syncedSnapshot) {
+  // Update local state's lastSyncedHash to match what was synced
+  // This marks the current content as "synced" so we can detect future local changes
+  if (!syncedSnapshot || !Array.isArray(syncedSnapshot.tabs)) {
+    return;
+  }
+
+  for (const syncedTab of syncedSnapshot.tabs) {
+    if (!syncedTab || syncedTab.deleted) {
+      continue;
+    }
+
+    const localTab = state.tabs.find(t => t.id === syncedTab.id && !t.deleted);
+    if (localTab && syncedTab.lastSyncedHash !== undefined) {
+      // Only update lastSyncedHash if the content hasn't changed since we prepared the snapshot
+      const currentHash = window.padSyncMerge?.hashContent
+        ? window.padSyncMerge.hashContent(localTab.content || '')
+        : null;
+
+      if (currentHash === syncedTab.contentHash) {
+        // Content is the same as what was synced, safe to update lastSyncedHash
+        localTab.lastSyncedHash = syncedTab.lastSyncedHash;
+      }
+    }
+  }
+
+  // Persist the updated lastSyncedHash values
+  persistState();
+}
+
+function handleMergeResult(mergeResult, machineName) {
+  console.log('[renderer] handleMergeResult called', mergeResult ? 'with data' : 'null');
+  if (!mergeResult) {
+    return;
+  }
+
+  const { mergedTabs, conflicts, tombstones } = mergeResult;
+  console.log('[renderer] mergedTabs:', mergedTabs?.length, 'conflicts:', conflicts?.length, 'tombstones:', tombstones?.length);
+  console.log('[renderer] mergedTabs details:', mergedTabs?.map(t => ({ id: t.id, updatedBy: t.updatedBy, content: t.content?.substring(0, 30) })));
+
+  // Check if there are any new tabs from other machines
+  const currentTabIds = new Set(state.tabs.map(t => t.id));
+  const newTabs = mergedTabs.filter(tab => !currentTabIds.has(tab.id));
+  console.log('[renderer] currentTabIds:', [...currentTabIds], 'newTabs:', newTabs.map(t => ({ id: t.id, updatedBy: t.updatedBy })));
+
+  // Check if any of our tabs were deleted by other machines
+  const tombstoneIds = new Set(tombstones.map(t => t.id));
+  const deletedTabs = state.tabs.filter(tab => !tab.deleted && tombstoneIds.has(tab.id));
+
+  // Check if any existing tabs have updated content from other machines
+  let hasContentUpdates = false;
+  for (const mergedTab of mergedTabs) {
+    if (mergedTab.deleted) continue;
+    const localTab = state.tabs.find(t => t.id === mergedTab.id && !t.deleted);
+    if (localTab && mergedTab.updatedBy !== machineName) {
+      const remoteTime = new Date(mergedTab.updatedAt || 0).getTime();
+      const localTime = new Date(localTab.updatedAt || 0).getTime();
+      if (remoteTime > localTime && localTab.content !== mergedTab.content) {
+        hasContentUpdates = true;
+        break;
+      }
+    }
+  }
+
+  // Only update if there are changes from other machines
+  if (newTabs.length === 0 && deletedTabs.length === 0 && conflicts.length === 0 && !hasContentUpdates) {
+    return;
+  }
+
+  // Apply new tabs from other machines
+  for (const newTab of newTabs) {
+    if (!newTab.deleted) {
+      state.tabs.push(newTab);
+      // Add to first group if not in any group
+      const inAnyGroup = state.groups.some(g => g.tabIds.includes(newTab.id));
+      if (!inAnyGroup && state.groups.length > 0) {
+        state.groups[0].tabIds.push(newTab.id);
+      }
+    }
+  }
+
+  // Apply tombstones from other machines (mark local tabs as deleted)
+  for (const tombstone of tombstones) {
+    const localTab = state.tabs.find(t => t.id === tombstone.id && !t.deleted);
+    if (localTab) {
+      // Check if our version is newer than the tombstone
+      const localTime = new Date(localTab.updatedAt || 0).getTime();
+      const tombstoneTime = new Date(tombstone.deletedAt || 0).getTime();
+
+      if (tombstoneTime > localTime) {
+        // Tombstone is newer - apply deletion
+        const idx = state.tabs.indexOf(localTab);
+        if (idx !== -1) {
+          state.tabs.splice(idx, 1, tombstone);
+          // Remove from groups
+          for (const group of state.groups) {
+            const gidx = group.tabIds.indexOf(tombstone.id);
+            if (gidx !== -1) {
+              group.tabIds.splice(gidx, 1);
+            }
+          }
+        }
+      }
+    }
+  }
+
+  // Update tabs with newer versions from other machines
+  for (const mergedTab of mergedTabs) {
+    if (mergedTab.deleted) continue;
+
+    const localTab = state.tabs.find(t => t.id === mergedTab.id && !t.deleted);
+    if (!localTab) continue;
+
+    const localTime = new Date(localTab.updatedAt || 0).getTime();
+    const remoteTime = new Date(mergedTab.updatedAt || 0).getTime();
+    const contentDiffers = localTab.content !== mergedTab.content;
+
+    // If content is the same, just update metadata
+    if (!contentDiffers) {
+      if (remoteTime > localTime) {
+        Object.assign(localTab, mergedTab);
+        localTab.lastMergedAt = Date.now();
+      }
+      continue;
+    }
+
+    // Content differs - compare timestamps
+    // LOCAL timestamp is authoritative (it reflects unsaved edits)
+    if (localTime >= remoteTime) {
+      // Local is same age or newer - keep local, our sync will push it
+      // No conflict needed - we are the source of truth
+      continue;
+    }
+
+    // Remote is newer (remoteTime > localTime)
+    // Check if we made local edits that haven't been synced yet
+    const localEditedByMe = localTab.updatedBy === machineName;
+
+    if (localEditedByMe) {
+      // We edited this tab locally - check if it's a real conflict
+      // It's a conflict if we edited AFTER we last accepted a remote version
+      const localEditedAfterLastMerge = localTime > (localTab.lastMergedAt || 0);
+
+      if (localEditedAfterLastMerge) {
+        // True conflict: we have unsaved local edits, remote also changed
+        if (!mergeConflicts.byTabId[localTab.id]) {
+          mergeConflicts.byTabId[localTab.id] = {
+            currentText: localTab.content,
+            backupText: mergedTab.content,
+            currentExcerpt: localTab.content,
+            backupExcerpt: mergedTab.content,
+            currentRange: null,
+            backupRange: null,
+            currentHunkRange: null,
+            backupHunkRange: null,
+            suggestedText: '',
+            reason: 'conflict',
+            machines: [machineName, mergedTab.updatedBy],
+          };
+        }
+      } else {
+        // Our local edit is older than lastMergedAt - accept remote
+        Object.assign(localTab, mergedTab);
+        localTab.lastMergedAt = Date.now();
+      }
+    } else {
+      // Tab was last edited by another machine - safe to accept remote
+      Object.assign(localTab, mergedTab);
+      localTab.lastMergedAt = Date.now();
+    }
+  }
+
+  // Persist any new conflicts we detected
+  if (Object.keys(mergeConflicts.byTabId).length > 0) {
+    persistMergeConflicts();
+    updateResolveConflictsButton();
+  }
+
+  // Handle conflicts
+  if (conflicts.length > 0) {
+    for (const conflict of conflicts) {
+      // Find the versions from different machines
+      const versions = conflict.machines;
+      if (versions.length < 2) continue;
+
+      // Store conflict for manual resolution
+      mergeConflicts.byTabId[conflict.tabId] = {
+        currentText: versions[0]?.tab?.content ?? '',
+        backupText: versions[1]?.tab?.content ?? '',
+        currentExcerpt: versions[0]?.tab?.content ?? '',
+        backupExcerpt: versions[1]?.tab?.content ?? '',
+        currentRange: null,
+        backupRange: null,
+        currentHunkRange: null,
+        backupHunkRange: null,
+        suggestedText: '',
+        reason: 'conflict',
+        machines: versions.map(v => v.machineName),
+      };
+    }
+    persistMergeConflicts();
+    updateResolveConflictsButton();
+  }
+
+  // Purge old tombstones
+  if (window.padSyncMerge?.purgeStaleTombstones) {
+    state.tabs = window.padSyncMerge.purgeStaleTombstones(state.tabs);
+  }
+
+  // Ensure active tab is still valid
+  const activeStillValid = state.tabs.some(t => t.id === state.activeTabId && !t.deleted);
+  if (!activeStillValid) {
+    const liveTabs = getLiveTabs();
+    state.activeTabId = liveTabs[0]?.id ?? null;
+  }
+
+  persistState();
+  renderGroups();
+  renderCollapsedGroups();
+  renderTabs();
+  syncNoteWithActiveTab();
 }

@@ -1,9 +1,9 @@
 const { app, BrowserWindow, dialog, Menu, ipcMain } = require('electron');
 const fs = require('fs/promises');
 const path = require('path');
-const os = require('os');
 const { createBackupManager } = require('./backup');
 const { createEventLogManager } = require('./events');
+const { getConfiguredMachineName } = require('./machine-name');
 
 const isMac = process.platform === 'darwin';
 const openDevTools = process.argv.includes('--devtools');
@@ -181,6 +181,41 @@ app.on('window-all-closed', () => {
 });
 
 function registerSyncHandlers() {
+  ipcMain.handle('pad:get-machine-name', () => {
+    return getConfiguredMachineName();
+  });
+
+  ipcMain.handle('pad:read-all-snapshots', async () => {
+    try {
+      const backupFolder = await getBackupFolderSetting();
+      if (!backupFolder) {
+        return { ok: false, error: 'No backup folder configured' };
+      }
+
+      const safeFolder = path.resolve(backupFolder);
+      const files = await fs.readdir(safeFolder);
+      const snapshotFiles = files.filter(f => f.startsWith('save_') && f.endsWith('.json'));
+
+      const snapshots = [];
+      for (const file of snapshotFiles) {
+        try {
+          const filePath = path.join(safeFolder, file);
+          const content = await fs.readFile(filePath, 'utf8');
+          const parsed = JSON.parse(content);
+          const machineName = file.replace(/^save_/, '').replace(/\.json$/, '');
+          snapshots.push({ machineName, snapshot: parsed, filePath });
+        } catch (err) {
+          console.warn(`Failed to read snapshot ${file}:`, err.message);
+        }
+      }
+
+      return { ok: true, snapshots };
+    } catch (error) {
+      console.error('Failed to read snapshots', error);
+      return { ok: false, error: error.message };
+    }
+  });
+
   ipcMain.handle('pad:save-snapshot', async (_event, payload) => {
     if (!payload || typeof payload !== 'object') {
       return { ok: false, error: 'Invalid payload' };
@@ -192,7 +227,7 @@ function registerSyncHandlers() {
     }
 
     const safeFolder = path.resolve(folderPath);
-    const fileName = `save_${os.hostname()}.json`;
+    const fileName = `save_${getConfiguredMachineName()}.json`;
     const targetPath = path.join(safeFolder, fileName);
 
     try {

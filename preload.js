@@ -1,6 +1,12 @@
 const { contextBridge, ipcRenderer } = require('electron');
 
 contextBridge.exposeInMainWorld('padAPI', {
+  getMachineName() {
+    return ipcRenderer.invoke('pad:get-machine-name');
+  },
+  readAllSnapshots() {
+    return ipcRenderer.invoke('pad:read-all-snapshots');
+  },
   onFileOpened(callback) {
     if (typeof callback !== 'function') {
       return () => {};

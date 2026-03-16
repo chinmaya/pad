@@ -556,11 +556,13 @@
         padding: 0.75rem;
         background: rgba(0, 0, 0, 0.02);
         overflow: auto;
-        white-space: pre;
+        white-space: pre-wrap;
+        word-wrap: break-word;
         font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New",
           monospace;
         font-size: 0.9rem;
         line-height: 1.35;
+        max-height: 300px;
       }
 
       .diff-line {
@@ -572,6 +574,243 @@
 
       .diff-line.changed {
         background: color-mix(in srgb, #f59e0b 22%, transparent);
+      }
+
+      .diff-line.added {
+        background: color-mix(in srgb, #22c55e 18%, transparent);
+      }
+
+      .diff-line.removed {
+        background: color-mix(in srgb, #ef4444 18%, transparent);
+      }
+
+      .diff-marker {
+        display: inline-block;
+        width: 1.2em;
+        text-align: center;
+        font-weight: 600;
+        margin-right: 0.25em;
+        opacity: 0.7;
+      }
+
+      .diff-marker.add {
+        color: #16a34a;
+      }
+
+      .diff-marker.remove {
+        color: #dc2626;
+      }
+
+      .diff-line-number {
+        display: inline-block;
+        min-width: 2.5em;
+        text-align: right;
+        padding-right: 0.75em;
+        margin-right: 0.5em;
+        color: #94a3b8;
+        border-right: 1px solid rgba(0, 0, 0, 0.1);
+        user-select: none;
+        font-size: 0.85em;
+      }
+
+      .diff-char-added {
+        background: color-mix(in srgb, #22c55e 35%, transparent);
+        border-radius: 2px;
+      }
+
+      .diff-char-removed {
+        background: color-mix(in srgb, #ef4444 35%, transparent);
+        border-radius: 2px;
+      }
+
+      .merge-pane-container {
+        display: flex;
+        flex-direction: column;
+        min-height: 0;
+      }
+
+      .merge-pane-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 0.5rem 0.75rem;
+        background: rgba(0, 0, 0, 0.04);
+        border: 1px solid rgba(0, 0, 0, 0.12);
+        border-bottom: none;
+        border-radius: 0.5rem 0.5rem 0 0;
+        font-size: 0.85rem;
+        font-weight: 600;
+      }
+
+      .merge-pane-header .machine-name {
+        font-weight: 400;
+        color: #64748b;
+        margin-left: 0.5rem;
+      }
+
+      .merge-pane-container .merge-pane {
+        border-radius: 0 0 0.5rem 0.5rem;
+        flex: 1;
+        min-height: 200px;
+        max-height: 300px;
+      }
+
+      .merge-nav {
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+      }
+
+      .merge-nav-btn {
+        border: 1px solid rgba(0, 0, 0, 0.12);
+        background: rgba(0, 0, 0, 0.04);
+        color: inherit;
+        padding: 0.25rem 0.5rem;
+        border-radius: 0.35rem;
+        cursor: pointer;
+        font-size: 0.85rem;
+        display: flex;
+        align-items: center;
+        gap: 0.25rem;
+      }
+
+      .merge-nav-btn:hover:not(:disabled) {
+        background: rgba(0, 0, 0, 0.08);
+      }
+
+      .merge-nav-btn:disabled {
+        opacity: 0.4;
+        cursor: not-allowed;
+      }
+
+      .merge-progress {
+        font-size: 0.85rem;
+        color: #64748b;
+        min-width: 3em;
+        text-align: center;
+      }
+
+      .merge-edit-section {
+        border: 1px solid rgba(0, 0, 0, 0.12);
+        border-radius: 0.5rem;
+        overflow: hidden;
+      }
+
+      .merge-edit-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 0.5rem 0.75rem;
+        background: rgba(0, 0, 0, 0.04);
+        border-bottom: 1px solid rgba(0, 0, 0, 0.12);
+        cursor: pointer;
+        user-select: none;
+      }
+
+      .merge-edit-header:hover {
+        background: rgba(0, 0, 0, 0.06);
+      }
+
+      .merge-edit-header .edit-label {
+        font-size: 0.85rem;
+        font-weight: 600;
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+      }
+
+      .merge-edit-header .edit-toggle {
+        font-size: 0.8rem;
+        color: #64748b;
+      }
+
+      .merge-edit-section.collapsed .merge-textarea {
+        display: none;
+      }
+
+      .merge-edit-section .merge-textarea {
+        border: none;
+        border-radius: 0;
+        min-height: 120px;
+      }
+
+      .tab.conflict .tab-icon::after {
+        content: ' \26A0';
+        color: #f59e0b;
+      }
+
+      .tab.conflict-delete .tab-icon::after {
+        content: ' \26A0';
+        color: #dc2626;
+      }
+
+      .tab.conflict.new-conflict {
+        animation: conflict-pulse 2s ease-in-out;
+      }
+
+      @keyframes conflict-pulse {
+        0%, 100% { box-shadow: none; }
+        50% { box-shadow: 0 0 0 3px color-mix(in srgb, #f59e0b 40%, transparent); }
+      }
+
+      .resolve-conflicts-icon {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.25rem;
+      }
+
+      .conflict-badge {
+        background: #f59e0b;
+        color: #fff;
+        font-size: 0.75rem;
+        font-weight: 600;
+        padding: 0.1rem 0.35rem;
+        border-radius: 0.75rem;
+        min-width: 1.1rem;
+        text-align: center;
+      }
+
+      @media (prefers-color-scheme: dark) {
+        .merge-pane-header {
+          background: rgba(255, 255, 255, 0.06);
+          border-color: rgba(255, 255, 255, 0.12);
+        }
+        .merge-pane-header .machine-name {
+          color: #94a3b8;
+        }
+        .merge-nav-btn {
+          background: rgba(255, 255, 255, 0.06);
+          border-color: rgba(255, 255, 255, 0.12);
+        }
+        .merge-nav-btn:hover:not(:disabled) {
+          background: rgba(255, 255, 255, 0.1);
+        }
+        .merge-progress {
+          color: #94a3b8;
+        }
+        .merge-edit-section {
+          border-color: rgba(255, 255, 255, 0.12);
+        }
+        .merge-edit-header {
+          background: rgba(255, 255, 255, 0.06);
+          border-color: rgba(255, 255, 255, 0.12);
+        }
+        .merge-edit-header:hover {
+          background: rgba(255, 255, 255, 0.08);
+        }
+        .merge-edit-header .edit-toggle {
+          color: #94a3b8;
+        }
+        .diff-line-number {
+          color: #64748b;
+          border-color: rgba(255, 255, 255, 0.1);
+        }
+        .diff-marker.add {
+          color: #4ade80;
+        }
+        .diff-marker.remove {
+          color: #f87171;
+        }
       }
 
       .merge-textarea {
@@ -666,6 +905,15 @@
             <div id="merge-title" class="modal-title">Resolve Merge Conflicts</div>
             <div id="merge-subtitle" class="modal-subtitle"></div>
           </div>
+          <div class="merge-nav">
+            <button id="merge-prev" class="merge-nav-btn" type="button" aria-label="Previous conflict" title="Previous conflict (Left arrow)">
+              <span aria-hidden="true">&#8592;</span> Prev
+            </button>
+            <span id="merge-progress" class="merge-progress">1/1</span>
+            <button id="merge-next" class="merge-nav-btn" type="button" aria-label="Next conflict" title="Next conflict (Right arrow)">
+              Next <span aria-hidden="true">&#8594;</span>
+            </button>
+          </div>
           <button id="merge-close" class="icon-button" type="button" aria-label="Close merge resolver">×</button>
         </header>
         <div class="merge-body">
@@ -674,21 +922,37 @@
             <select id="merge-tab-select"></select>
           </label>
           <div class="merge-row">
-            <pre id="merge-current" class="merge-pane" aria-label="Current content"></pre>
-            <pre id="merge-backup" class="merge-pane" aria-label="Backup content"></pre>
+            <div class="merge-pane-container">
+              <div id="merge-current-header" class="merge-pane-header">
+                <span>Current<span id="merge-current-machine" class="machine-name"></span></span>
+              </div>
+              <pre id="merge-current" class="merge-pane" aria-label="Current content"></pre>
+            </div>
+            <div class="merge-pane-container">
+              <div id="merge-backup-header" class="merge-pane-header">
+                <span>Backup<span id="merge-backup-machine" class="machine-name"></span></span>
+              </div>
+              <pre id="merge-backup" class="merge-pane" aria-label="Backup content"></pre>
+            </div>
           </div>
-          <textarea
-            id="merge-manual"
-            class="merge-textarea hidden"
-            spellcheck="false"
-            placeholder="Manual resolution (optional)…"
-          ></textarea>
+          <div id="merge-edit-section" class="merge-edit-section collapsed">
+            <div id="merge-edit-header" class="merge-edit-header">
+              <span class="edit-label">Manual Edit</span>
+              <span class="edit-toggle">Click to expand</span>
+            </div>
+            <textarea
+              id="merge-manual"
+              class="merge-textarea"
+              spellcheck="false"
+              placeholder="Edit to create a custom resolution..."
+            ></textarea>
+          </div>
           <div class="modal-actions">
             <button id="merge-keep-current" type="button">Keep Current</button>
             <button id="merge-use-backup" type="button" class="secondary">Use Backup</button>
             <button id="merge-keep-both" type="button" class="secondary">Keep Both</button>
             <button id="merge-delete-tab" type="button" class="secondary">Delete Tab</button>
-            <button id="merge-use-manual" type="button" class="secondary">Use Manual</button>
+            <button id="merge-use-manual" type="button" class="secondary">Use Manual Edit</button>
             <div class="modal-hint">Conflicts are stored in localStorage</div>
           </div>
         </div>
@@ -696,6 +960,8 @@
     </div>
     <script src="./app-settings-db.js"></script>
     <script src="./merge.js"></script>
+    <script src="./sync-merge.js"></script>
+    <script src="./sync.js"></script>
     <script src="./renderer.js"></script>
   </body>
 </html>
